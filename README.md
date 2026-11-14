@@ -8,7 +8,7 @@ Vikunja API client in Go
 `go fmt ./...`
 
 ## Testing
-`go test ./...`
+`go test -cover ./...`
 
 ### Mocking
 Mocks are created by the [mockgen](https://github.com/uber-go/mock) utility.

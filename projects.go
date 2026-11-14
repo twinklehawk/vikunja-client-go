@@ -64,7 +64,7 @@ func (c *Client) ListProjects(
 	req.URL.RawQuery = q.Encode()
 
 	respBody := ListProjectsResponse{}
-	err = c.do(req, respBody)
+	err = c.do(req, &respBody)
 	if err != nil {
 		return nil, err
 	}
