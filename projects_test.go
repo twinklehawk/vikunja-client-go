@@ -40,6 +40,26 @@ func TestListProjects_SendsRequest(t *testing.T) {
 	}
 }
 
+func TestListProjects_RemovesDuplicateSlashInURL(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL+"/", "test-token")
+	_, err := client.ListProjects(context.Background(), ListProjectsRequest{})
+	if err != nil {
+		t.Fatalf("ListProjects returned error: %v", err)
+	}
+
+	if gotReq.URL.Path != "/api/v2/projects" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/projects")
+	}
+}
+
 func TestListProjects_QueryParameters(t *testing.T) {
 	tests := []struct {
 		name    string
