@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -191,5 +192,131 @@ func TestListProjects_CanceledContext(t *testing.T) {
 	_, err := client.ListProjects(ctx, ListProjectsRequest{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
+	}
+}
+
+// pagedProjectsServer serves pages of projects, recording the query of each request.
+func pagedProjectsServer(t *testing.T, pages []string, gotQueries *[]url.Values) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*gotQueries = append(*gotQueries, r.URL.Query())
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page < 1 || page > len(pages) {
+			t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(pages[page-1]))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestListProjectsStream_IteratesAllPages(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedProjectsServer(t, []string{
+		`{"items":[{"id":1,"title":"Inbox"},{"id":2,"title":"Work"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := NewClient(server.URL, "test-token")
+	var got []Project
+	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{Query: "x", PerPage: 2, Page: 5}) {
+		if err != nil {
+			t.Fatalf("ListProjectsStream returned error: %v", err)
+		}
+		got = append(got, p)
+	}
+
+	want := []Project{{Id: 1, Title: "Inbox"}, {Id: 2, Title: "Work"}, {Id: 3, Title: "Home"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("projects = %+v, want %+v", got, want)
+	}
+
+	wantQueries := []url.Values{
+		{"q": {"x"}, "is_archived": {"false"}, "page": {"1"}, "per_page": {"2"}},
+		{"q": {"x"}, "is_archived": {"false"}, "page": {"2"}, "per_page": {"2"}},
+	}
+	if !reflect.DeepEqual(gotQueries, wantQueries) {
+		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
+	}
+}
+
+func TestListProjectsStream_StopsOnBreak(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedProjectsServer(t, []string{
+		`{"items":[{"id":1,"title":"Inbox"},{"id":2,"title":"Work"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := NewClient(server.URL, "test-token")
+	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+		if err != nil {
+			t.Fatalf("ListProjectsStream returned error: %v", err)
+		}
+		if p.Id == 1 {
+			break
+		}
+	}
+
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListProjectsStream_StopsOnEmptyPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedProjectsServer(t, []string{
+		`{"items":[{"id":1,"title":"Inbox"}],"total_pages":5}`,
+		`{"items":[],"total_pages":5}`,
+	}, &gotQueries)
+
+	client := NewClient(server.URL, "test-token")
+	count := 0
+	for _, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+		if err != nil {
+			t.Fatalf("ListProjectsStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("projects = %d, want 1", count)
+	}
+	if len(gotQueries) != 2 {
+		t.Errorf("requests = %d, want 2", len(gotQueries))
+	}
+}
+
+func TestListProjectsStream_YieldsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Inbox"}],"page":1,"total_pages":2}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-token")
+	var got []Project
+	var gotErrs []error
+	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+		if err != nil {
+			gotErrs = append(gotErrs, err)
+			continue
+		}
+		got = append(got, p)
+	}
+
+	if want := []Project{{Id: 1, Title: "Inbox"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("projects = %+v, want %+v", got, want)
+	}
+	if len(gotErrs) != 1 {
+		t.Fatalf("errors = %v, want exactly 1", gotErrs)
+	}
+	var apiErr *ApiError
+	if !errors.As(gotErrs[0], &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("error = %v, want *ApiError with status 500", gotErrs[0])
 	}
 }

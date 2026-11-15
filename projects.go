@@ -3,6 +3,7 @@ package vikunja
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"strconv"
 )
@@ -80,4 +81,34 @@ func (c *Client) ListProjects(
 		return nil, err
 	}
 	return &respBody, nil
+}
+
+// ListProjectsStream returns an iterator over all projects matching the request, fetching pages on demand.
+// request.Page is ignored; iteration always starts at page 1. If a request fails, the error is
+// yielded with a zero [Project] and iteration stops.
+func (c *Client) ListProjectsStream(
+	ctx context.Context,
+	request ListProjectsRequest,
+) iter.Seq2[Project, error] {
+	return func(yield func(Project, error) bool) {
+		req := request
+		req.Page = 1
+
+		for {
+			resp, err := c.ListProjects(ctx, req)
+			if err != nil {
+				yield(Project{}, err)
+				return
+			}
+			for _, item := range resp.Items {
+				if !yield(item, nil) {
+					return
+				}
+			}
+			if len(resp.Items) == 0 || req.Page >= resp.TotalPages {
+				return
+			}
+			req.Page++
+		}
+	}
 }
