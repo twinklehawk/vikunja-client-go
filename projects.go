@@ -18,11 +18,19 @@ type Project struct {
 // ListProjectsRequest specifies the parameters for searching for projects.
 type ListProjectsRequest struct {
 	// Query is the search query.
-	Query      string
+	Query string
+	// IsArchived controls if archived projects are returned, by default archived projects are excluded.
 	IsArchived bool
-	Expand     string
-	Page       int64
-	PerPage    int64
+	// Expand indicates additional fields to expand.
+	// If set to "permissions", each returned project includes the max permission the requesting user has on it.
+	// Currently only "permissions" is supported.
+	Expand string
+	// Format determines how rich-text fields are exchanged. Supported values are "html" and "markdown".
+	Format string
+	// Page is a 1-based page number, default is 1.
+	Page int64
+	// PerPage is the number of items per page, default is controlled by the server configuration.
+	PerPage int64
 }
 
 // ListProjectsResponse contains the list of [Project]s and pagination information returned
@@ -60,6 +68,9 @@ func (c *Client) ListProjects(
 	}
 	if request.PerPage != 0 {
 		q.Add("per_page", strconv.FormatInt(request.PerPage, 10))
+	}
+	if request.Format != "" {
+		q.Add("format", request.Format)
 	}
 	req.URL.RawQuery = q.Encode()
 
