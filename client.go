@@ -1,6 +1,6 @@
 // Vikunja provides a client for the Vikunja V2 API.
 //
-// Exmample usage:
+// Example usage:
 //
 // client := NewClient("https://vikunja-url", "apiToken")
 //
@@ -8,7 +8,7 @@
 //	    Query: "project-name"
 //	}
 //
-// resp, err := client.ListProjects(context.Background())
+// resp, err := client.ListProjects(context.Background(), ListProjectsRequest{})
 package vikunja
 
 import (
