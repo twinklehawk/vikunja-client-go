@@ -52,11 +52,11 @@ func (c *Client) ListProjects(
 	ctx context.Context,
 	request ListProjectsRequest,
 ) (*ListProjectsResponse, error) {
-	url, err := url.JoinPath(c.baseURL, "/api/v2/projects")
+	endpoint, err := url.JoinPath(c.baseURL, "/api/v2/projects")
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create listProjects request: %w", err)
 	}
