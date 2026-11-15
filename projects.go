@@ -65,7 +65,9 @@ func (c *Client) ListProjects(
 	if request.Query != "" {
 		q.Add("q", request.Query)
 	}
-	q.Add("is_archived", strconv.FormatBool(request.IsArchived))
+	if request.IsArchived {
+		q.Add("is_archived", "true")
+	}
 	if request.Expand != "" {
 		q.Add("expand", request.Expand)
 	}

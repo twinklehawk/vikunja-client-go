@@ -67,9 +67,9 @@ func TestListProjects_QueryParameters(t *testing.T) {
 		want    url.Values
 	}{
 		{
-			name:    "defaults only send is_archived",
+			name:    "defaults sends nothing",
 			request: ListProjectsRequest{},
-			want:    url.Values{"is_archived": {"false"}},
+			want:    url.Values{},
 		},
 		{
 			name: "all parameters set",
@@ -94,17 +94,15 @@ func TestListProjects_QueryParameters(t *testing.T) {
 			name:    "query only",
 			request: ListProjectsRequest{Query: "inbox"},
 			want: url.Values{
-				"q":           {"inbox"},
-				"is_archived": {"false"},
+				"q": {"inbox"},
 			},
 		},
 		{
 			name:    "pagination only",
 			request: ListProjectsRequest{Page: 3, PerPage: 10},
 			want: url.Values{
-				"is_archived": {"false"},
-				"page":        {"3"},
-				"per_page":    {"10"},
+				"page":     {"3"},
+				"per_page": {"10"},
 			},
 		},
 	}
@@ -254,8 +252,8 @@ func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 	}
 
 	wantQueries := []url.Values{
-		{"q": {"x"}, "is_archived": {"false"}, "page": {"1"}, "per_page": {"2"}},
-		{"q": {"x"}, "is_archived": {"false"}, "page": {"2"}, "per_page": {"2"}},
+		{"q": {"x"}, "page": {"1"}, "per_page": {"2"}},
+		{"q": {"x"}, "page": {"2"}, "per_page": {"2"}},
 	}
 	if !reflect.DeepEqual(gotQueries, wantQueries) {
 		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
