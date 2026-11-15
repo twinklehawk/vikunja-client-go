@@ -23,19 +23,19 @@ import (
 // Client is a Vikunja API client.
 type Client struct {
 	httpClient          *http.Client
-	baseUrl             string
+	baseURL             string
 	requestInterceptors []requestInterceptor
 }
 
-// ApiError represents an error when calling a Vikunja API.
-type ApiError struct {
+// APIError represents an error when calling a Vikunja API.
+type APIError struct {
 	StatusCode int
 	StatusText string
 	Message    string
 }
 
-// Error returns information about the [ApiError].
-func (e *ApiError) Error() string {
+// Error returns information about the [APIError].
+func (e *APIError) Error() string {
 	return fmt.Sprintf("%d - %s: %s", e.StatusCode, e.StatusText, e.Message)
 }
 
@@ -52,14 +52,14 @@ func (i *acceptRequestInterceptor) process(req *http.Request) error {
 }
 
 // NewClient creates a new [Client] for making requests to a Vikunja instance.
-func NewClient(baseUrl string, apiToken string) *Client {
+func NewClient(baseURL string, apiToken string) *Client {
 	interceptors := make([]requestInterceptor, 2)
 	interceptors[0] = &apiTokenRequestInterceptor{apiToken: apiToken}
 	interceptors[1] = &acceptRequestInterceptor{}
 
 	return &Client{
 		httpClient:          &http.Client{Timeout: 30 * time.Second},
-		baseUrl:             baseUrl,
+		baseURL:             baseURL,
 		requestInterceptors: interceptors,
 	}
 }
@@ -86,7 +86,7 @@ func (c *Client) do(req *http.Request, respBody any) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return &ApiError{
+		return &APIError{
 			StatusCode: resp.StatusCode,
 			StatusText: resp.Status,
 			Message:    string(respData),

@@ -10,8 +10,8 @@ import (
 
 // Project contains details for a Vikunja project.
 type Project struct {
-	// Id is the unique, numeric ID of the project.
-	Id int64 `json:"id"`
+	// ID is the unique, numeric ID of the project.
+	ID int64 `json:"id"`
 	// Title is the title of the project.
 	Title string `json:"title"`
 }
@@ -46,12 +46,12 @@ type ListProjectsResponse struct {
 
 // ListProjects returns the projects the authenticated user has access to (owned plus shared,
 // with child projects of accessible parents), paginated. Archived projects are excluded unless
-// is_archived=true. Pass expand=permissions to include each project's max_permission for the caller.
+// IsArchived=true. Pass Expand=permissions to include each project's max_permission for the caller.
 func (c *Client) ListProjects(
 	ctx context.Context,
 	request ListProjectsRequest,
 ) (*ListProjectsResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseUrl+"/api/v2/projects", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v2/projects", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create listProjects request: %w", err)
 	}

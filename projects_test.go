@@ -135,8 +135,8 @@ func TestListProjects_DecodesResponse(t *testing.T) {
 
 	want := &ListProjectsResponse{
 		Items: []Project{
-			{Id: 1, Title: "Inbox"},
-			{Id: 42, Title: "Work"},
+			{ID: 1, Title: "Inbox"},
+			{ID: 42, Title: "Work"},
 		},
 		Page:       1,
 		PerPage:    50,
@@ -164,7 +164,7 @@ func TestListProjects_ApiError(t *testing.T) {
 		t.Errorf("response = %+v, want nil", resp)
 	}
 
-	var apiErr *ApiError
+	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %v (%T), want *ApiError", err, err)
 	}
@@ -228,7 +228,7 @@ func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 		got = append(got, p)
 	}
 
-	want := []Project{{Id: 1, Title: "Inbox"}, {Id: 2, Title: "Work"}, {Id: 3, Title: "Home"}}
+	want := []Project{{ID: 1, Title: "Inbox"}, {ID: 2, Title: "Work"}, {ID: 3, Title: "Home"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("projects = %+v, want %+v", got, want)
 	}
@@ -254,7 +254,7 @@ func TestListProjectsStream_StopsOnBreak(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListProjectsStream returned error: %v", err)
 		}
-		if p.Id == 1 {
+		if p.ID == 1 {
 			break
 		}
 	}
@@ -309,13 +309,13 @@ func TestListProjectsStream_YieldsError(t *testing.T) {
 		got = append(got, p)
 	}
 
-	if want := []Project{{Id: 1, Title: "Inbox"}}; !reflect.DeepEqual(got, want) {
+	if want := []Project{{ID: 1, Title: "Inbox"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("projects = %+v, want %+v", got, want)
 	}
 	if len(gotErrs) != 1 {
 		t.Fatalf("errors = %v, want exactly 1", gotErrs)
 	}
-	var apiErr *ApiError
+	var apiErr *APIError
 	if !errors.As(gotErrs[0], &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
 		t.Errorf("error = %v, want *ApiError with status 500", gotErrs[0])
 	}
