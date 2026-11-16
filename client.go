@@ -12,11 +12,14 @@
 package vikunja
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -95,6 +98,48 @@ func NewClient(opts ...Option) *Client {
 	}
 
 	return c
+}
+
+func (c *Client) newRequest(
+	ctx context.Context,
+	method string,
+	path string,
+) (*http.Request, error) {
+	endpoint, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		return nil, fmt.Errorf("building URL: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	return req, nil
+}
+
+func (c *Client) newRequestWithBody(
+	ctx context.Context,
+	method string,
+	path string,
+	reqBody any,
+) (*http.Request, error) {
+	endpoint, err := url.JoinPath(c.baseURL, path)
+	if err != nil {
+		return nil, fmt.Errorf("building URL: %w", err)
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+	body := bytes.NewReader(data)
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	return req, nil
 }
 
 func (c *Client) do(req *http.Request, respBody any) (err error) {
