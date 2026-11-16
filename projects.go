@@ -58,7 +58,7 @@ func (c *Client) ListProjects(
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create listProjects request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	q := req.URL.Query()

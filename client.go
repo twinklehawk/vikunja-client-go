@@ -39,7 +39,7 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%d - %s: %s", e.StatusCode, e.StatusText, e.Message)
 }
 
-// RequestInterceptor modified a [http.Request] before the request is sent.
+// requestInterceptor modifies a [http.Request] before the request is sent.
 type requestInterceptor interface {
 	process(req *http.Request) error
 }
@@ -53,9 +53,10 @@ func (i *acceptRequestInterceptor) process(req *http.Request) error {
 
 // NewClient creates a new [Client] for making requests to a Vikunja instance.
 func NewClient(baseURL string, apiToken string) *Client {
-	interceptors := make([]requestInterceptor, 2)
-	interceptors[0] = &apiTokenRequestInterceptor{apiToken: apiToken}
-	interceptors[1] = &acceptRequestInterceptor{}
+	interceptors := []requestInterceptor{
+		&apiTokenRequestInterceptor{apiToken: apiToken},
+		&acceptRequestInterceptor{},
+	}
 
 	return &Client{
 		httpClient:          &http.Client{Timeout: 30 * time.Second},
@@ -68,13 +69,13 @@ func (c *Client) do(req *http.Request, respBody any) error {
 	for _, interceptor := range c.requestInterceptors {
 		err := interceptor.process(req)
 		if err != nil {
-			return fmt.Errorf("failed to run interceptor: %w", err)
+			return fmt.Errorf("running interceptor: %w", err)
 		}
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
+		return fmt.Errorf("executing request: %w", err)
 	}
 	defer func() {
 		err = errors.Join(err, resp.Body.Close())
@@ -82,7 +83,7 @@ func (c *Client) do(req *http.Request, respBody any) error {
 
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return fmt.Errorf("reading response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
