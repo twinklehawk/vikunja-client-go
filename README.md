@@ -4,6 +4,9 @@ Vikunja API client in Go
 ## Building
 `go build`
 
+## Linting
+`golangci-lint run`
+
 ## Formatting
 `go fmt ./...`
 
