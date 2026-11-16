@@ -20,7 +20,7 @@ func TestListProjects_SendsRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	_, err := client.ListProjects(context.Background(), ListProjectsRequest{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
@@ -49,7 +49,7 @@ func TestListProjects_RemovesDuplicateSlashInURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL+"/", "test-token")
+	client := newTestClient(server.URL + "/")
 	_, err := client.ListProjects(context.Background(), ListProjectsRequest{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
@@ -116,7 +116,7 @@ func TestListProjects_QueryParameters(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := NewClient(server.URL, "test-token")
+			client := newTestClient(server.URL)
 			_, err := client.ListProjects(context.Background(), tt.request)
 			if err != nil {
 				t.Fatalf("ListProjects returned error: %v", err)
@@ -145,7 +145,7 @@ func TestListProjects_DecodesResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	resp, err := client.ListProjects(context.Background(), ListProjectsRequest{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
@@ -173,7 +173,7 @@ func TestListProjects_ApiError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "bad-token")
+	client := newTestClient(server.URL)
 	resp, err := client.ListProjects(context.Background(), ListProjectsRequest{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -189,8 +189,8 @@ func TestListProjects_ApiError(t *testing.T) {
 	if apiErr.StatusCode != http.StatusUnauthorized {
 		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
 	}
-	if apiErr.StatusText != "401 Unauthorized" {
-		t.Errorf("StatusText = %q, want %q", apiErr.StatusText, "401 Unauthorized")
+	if apiErr.StatusText != "Unauthorized" {
+		t.Errorf("StatusText = %q, want %q", apiErr.StatusText, "Unauthorized")
 	}
 	if apiErr.Message != `{"message":"invalid token"}` {
 		t.Errorf("Message = %q, want %q", apiErr.Message, `{"message":"invalid token"}`)
@@ -206,7 +206,7 @@ func TestListProjects_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	_, err := client.ListProjects(ctx, ListProjectsRequest{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
@@ -237,7 +237,7 @@ func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
 	}, &gotQueries)
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	var got []Project
 	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{Query: "x", PerPage: 2, Page: 5}) {
 		if err != nil {
@@ -267,7 +267,7 @@ func TestListProjectsStream_StopsOnBreak(t *testing.T) {
 		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
 	}, &gotQueries)
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
 		if err != nil {
 			t.Fatalf("ListProjectsStream returned error: %v", err)
@@ -289,7 +289,7 @@ func TestListProjectsStream_StopsOnEmptyPage(t *testing.T) {
 		`{"items":[],"total_pages":5}`,
 	}, &gotQueries)
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	count := 0
 	for _, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
 		if err != nil {
@@ -316,7 +316,7 @@ func TestListProjectsStream_YieldsError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-token")
+	client := newTestClient(server.URL)
 	var got []Project
 	var gotErrs []error
 	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
