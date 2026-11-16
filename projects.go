@@ -2,10 +2,8 @@ package vikunja
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"net/http"
-	"net/url"
 	"strconv"
 )
 
@@ -52,13 +50,9 @@ func (c *Client) ListProjects(
 	ctx context.Context,
 	request ListProjectsRequest,
 ) (*ListProjectsResponse, error) {
-	endpoint, err := url.JoinPath(c.baseURL, "/api/v2/projects")
+	req, err := c.newRequest(ctx, http.MethodGet, "/api/v2/projects")
 	if err != nil {
 		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	q := req.URL.Query()
