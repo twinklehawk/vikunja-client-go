@@ -20,6 +20,8 @@ type Task struct {
 	// The bucket the task is in. Only populated when the task is accessed via a view with buckets.
 	// To move a task between buckets, the new bucket must be in the same view as the old one.
 	BucketID int64 `json:"bucket_id"`
+	// The labels on this task. Read-only here; use the label-task endpoints to add or remove labels.
+	Labels []Label `json:"labels"`
 }
 
 // PaginatedTasksResponse contains the list of [Task]s and pagination information returned from a tasks API.
