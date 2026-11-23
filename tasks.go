@@ -219,3 +219,49 @@ func (c *Client) listTasks(
 	}
 	return &respBody, nil
 }
+
+// UpdateTaskRequest is the details of the task to update.
+// Only non-nil fields are sent and updated, so a field can be set to its zero value,
+// e.g. Done: new(false) marks a task as not done and Description: new("") clears the description.
+type UpdateTaskRequest struct {
+	// BucketID moves the task to this bucket. The bucket must be in the same view as the task's current bucket.
+	BucketID *int64 `json:"bucket_id,omitempty"`
+	// Description replaces the task's description.
+	Description *string `json:"description,omitempty"`
+	// Done marks the task as done or not done.
+	Done *bool `json:"done,omitempty"`
+	// ProjectID moves the task to this project.
+	ProjectID *int64 `json:"project_id,omitempty"`
+}
+
+// UpdateTask performs a partial update of task data.
+// Only non-nil values of the request are updated in the task.
+func (c *Client) UpdateTask(
+	ctx context.Context,
+	taskID int64,
+	request UpdateTaskRequest,
+) (*Task, error) {
+	if taskID <= 0 {
+		return nil, fmt.Errorf("taskID must be a positive ID, got %d", taskID)
+	}
+	if request.BucketID != nil && *request.BucketID <= 0 {
+		return nil, fmt.Errorf("request.BucketID must be a positive ID, got %d", *request.BucketID)
+	}
+	if request.ProjectID != nil && *request.ProjectID <= 0 {
+		return nil, fmt.Errorf("request.ProjectID must be a positive ID, got %d", *request.ProjectID)
+	}
+
+	path := fmt.Sprintf("/api/v2/tasks/%d", taskID)
+	req, err := c.newRequestWithBody(ctx, http.MethodPatch, path, request)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/merge-patch+json")
+
+	respBody := Task{}
+	err = c.do(req, &respBody)
+	if err != nil {
+		return nil, err
+	}
+	return &respBody, nil
+}
