@@ -63,10 +63,8 @@ func (c *Client) CreateTask(
 	return &respBody, nil
 }
 
-// ListTasksInProjectRequest specifies the parameters for the ListTasksInProject API.
-type ListTasksInProjectRequest struct {
-	// ProjectID is the ID of the project.
-	ProjectID int64
+// TaskListQuery holds the query parameters shared by the task list APIs.
+type TaskListQuery struct {
 	// Query is the search query.
 	Query string
 	// Filter is the query to match tasks by, e.g. "done = false && due_date < now+7d".
@@ -89,91 +87,43 @@ type ListTasksInProjectRequest struct {
 // Requires read access to the project.
 func (c *Client) ListTasksInProject(
 	ctx context.Context,
-	request ListTasksInProjectRequest,
+	projectID int64,
+	query TaskListQuery,
 ) (*PaginatedTasksResponse, error) {
-	if request.ProjectID <= 0 {
-		return nil, fmt.Errorf("projectID must be a positive ID, got %d", request.ProjectID)
+	if projectID <= 0 {
+		return nil, fmt.Errorf("projectID must be a positive ID, got %d", projectID)
 	}
 
 	return c.listTasks(
 		ctx,
-		fmt.Sprintf("/api/v2/projects/%d/tasks", request.ProjectID),
-		taskListQuery{
-			Query:              request.Query,
-			Filter:             request.Filter,
-			FilterTimeZone:     request.FilterTimeZone,
-			FilterIncludeNulls: request.FilterIncludeNulls,
-			Format:             request.Format,
-			Page:               request.Page,
-			PerPage:            request.PerPage,
-		},
+		fmt.Sprintf("/api/v2/projects/%d/tasks", projectID),
+		query,
 	)
-}
-
-// ListTasksInProjectViewRequest specifies the parameters for the ListTasksInProjectView API.
-type ListTasksInProjectViewRequest struct {
-	// ProjectID is the ID of the project.
-	ProjectID int64
-	// ViewID is the ID of the project view.
-	ViewID int64
-	// Query is the search query.
-	Query string
-	// Filter is the query to match tasks by, e.g. "done = false && due_date < now+7d".
-	// Combine conditions with && or || (not and/or) and group them with parentheses.
-	// Operators: =, !=, >, >=, <, <=, like, in, not in.
-	Filter string
-	// FilterTimeZone is the timezone used to resolve relative dates in the filter.
-	FilterTimeZone string
-	// FilterIncludeNulls controls if the filter should match when the task's field is null.
-	FilterIncludeNulls bool
-	// Format determines how rich-text fields are exchanged. Supported values are "html" and "markdown".
-	Format string
-	// Page is a 1-based page number, default is 1.
-	Page int64
-	// PerPage is the number of items per page, default is controlled by the server configuration.
-	PerPage int64
 }
 
 // ListTasksInProjectView returns the tasks in a project view, paginated and flat.
 func (c *Client) ListTasksInProjectView(
 	ctx context.Context,
-	request ListTasksInProjectViewRequest,
+	projectID int64,
+	viewID int64,
+	query TaskListQuery,
 ) (*PaginatedTasksResponse, error) {
-	if request.ProjectID <= 0 {
-		return nil, fmt.Errorf("projectID must be a positive ID, got %d", request.ProjectID)
+	if projectID <= 0 {
+		return nil, fmt.Errorf("projectID must be a positive ID, got %d", projectID)
 	}
-	if request.ViewID <= 0 {
-		return nil, fmt.Errorf("viewID must be a positive ID, got %d", request.ViewID)
+	if viewID <= 0 {
+		return nil, fmt.Errorf("viewID must be a positive ID, got %d", viewID)
 	}
 
 	return c.listTasks(
 		ctx,
-		fmt.Sprintf("/api/v2/projects/%d/views/%d/tasks", request.ProjectID, request.ViewID),
-		taskListQuery{
-			Query:              request.Query,
-			Filter:             request.Filter,
-			FilterTimeZone:     request.FilterTimeZone,
-			FilterIncludeNulls: request.FilterIncludeNulls,
-			Format:             request.Format,
-			Page:               request.Page,
-			PerPage:            request.PerPage,
-		},
+		fmt.Sprintf("/api/v2/projects/%d/views/%d/tasks", projectID, viewID),
+		query,
 	)
 }
 
-// taskListQuery holds the query parameters shared by the task list APIs.
-type taskListQuery struct {
-	Query              string
-	Filter             string
-	FilterTimeZone     string
-	FilterIncludeNulls bool
-	Format             string
-	Page               int64
-	PerPage            int64
-}
-
 // addTo adds the non-zero parameters to q.
-func (p taskListQuery) addTo(q url.Values) {
+func (p TaskListQuery) addTo(q url.Values) {
 	if p.Query != "" {
 		q.Add("q", p.Query)
 	}
@@ -201,7 +151,7 @@ func (p taskListQuery) addTo(q url.Values) {
 func (c *Client) listTasks(
 	ctx context.Context,
 	path string,
-	params taskListQuery,
+	params TaskListQuery,
 ) (*PaginatedTasksResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, path)
 	if err != nil {

@@ -216,7 +216,7 @@ func TestListTasksInProject_SendsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: 5})
+	_, err := client.ListTasksInProject(context.Background(), 5, TaskListQuery{})
 	if err != nil {
 		t.Fatalf("ListTasksInProject returned error: %v", err)
 	}
@@ -237,19 +237,18 @@ func TestListTasksInProject_SendsRequest(t *testing.T) {
 
 func TestListTasksInProject_QueryParameters(t *testing.T) {
 	tests := []struct {
-		name    string
-		request ListTasksInProjectRequest
-		want    url.Values
+		name  string
+		query TaskListQuery
+		want  url.Values
 	}{
 		{
-			name:    "defaults sends nothing",
-			request: ListTasksInProjectRequest{ProjectID: 5},
-			want:    url.Values{},
+			name:  "defaults sends nothing",
+			query: TaskListQuery{},
+			want:  url.Values{},
 		},
 		{
 			name: "all parameters set",
-			request: ListTasksInProjectRequest{
-				ProjectID:          5,
+			query: TaskListQuery{
 				Query:              "milk",
 				Filter:             "done = false && due_date < now+7d",
 				FilterTimeZone:     "Europe/Berlin",
@@ -269,25 +268,24 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 			},
 		},
 		{
-			name:    "query only",
-			request: ListTasksInProjectRequest{ProjectID: 5, Query: "milk"},
+			name:  "query only",
+			query: TaskListQuery{Query: "milk"},
 			want: url.Values{
 				"q": {"milk"},
 			},
 		},
 		{
 			name: "filter only",
-			request: ListTasksInProjectRequest{
-				ProjectID: 5,
-				Filter:    "priority >= 3 || labels in 1, 2",
+			query: TaskListQuery{
+				Filter: "priority >= 3 || labels in 1, 2",
 			},
 			want: url.Values{
 				"filter": {"priority >= 3 || labels in 1, 2"},
 			},
 		},
 		{
-			name:    "pagination only",
-			request: ListTasksInProjectRequest{ProjectID: 5, Page: 3, PerPage: 10},
+			name:  "pagination only",
+			query: TaskListQuery{Page: 3, PerPage: 10},
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
@@ -305,7 +303,7 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			_, err := client.ListTasksInProject(context.Background(), tt.request)
+			_, err := client.ListTasksInProject(context.Background(), 5, tt.query)
 			if err != nil {
 				t.Fatalf("ListTasksInProject returned error: %v", err)
 			}
@@ -334,7 +332,7 @@ func TestListTasksInProject_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: 5})
+	got, err := client.ListTasksInProject(context.Background(), 5, TaskListQuery{})
 	if err != nil {
 		t.Fatalf("ListTasksInProject returned error: %v", err)
 	}
@@ -362,7 +360,7 @@ func TestListTasksInProject_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: 5})
+	resp, err := client.ListTasksInProject(context.Background(), 5, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -389,7 +387,7 @@ func TestListTasksInProject_InvalidResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: 5})
+	resp, err := client.ListTasksInProject(context.Background(), 5, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -404,7 +402,7 @@ func TestListTasksInProject_InvalidResponse(t *testing.T) {
 
 func TestListTasksInProject_RequestError(t *testing.T) {
 	client := newTestClient("http://[::1")
-	resp, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: 5})
+	resp, err := client.ListTasksInProject(context.Background(), 5, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -431,7 +429,7 @@ func TestListTasksInProject_InvalidProjectID(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListTasksInProject(context.Background(), ListTasksInProjectRequest{ProjectID: tt.projectID})
+			resp, err := client.ListTasksInProject(context.Background(), tt.projectID, TaskListQuery{})
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -458,7 +456,7 @@ func TestListTasksInProject_CanceledContext(t *testing.T) {
 	cancel()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListTasksInProject(ctx, ListTasksInProjectRequest{ProjectID: 5})
+	_, err := client.ListTasksInProject(ctx, 5, TaskListQuery{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
@@ -474,10 +472,7 @@ func TestListTasksInProjectView_SendsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-		ProjectID: 5,
-		ViewID:    7,
-	})
+	_, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{})
 	if err != nil {
 		t.Fatalf("ListTasksInProjectView returned error: %v", err)
 	}
@@ -498,20 +493,18 @@ func TestListTasksInProjectView_SendsRequest(t *testing.T) {
 
 func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 	tests := []struct {
-		name    string
-		request ListTasksInProjectViewRequest
-		want    url.Values
+		name  string
+		query TaskListQuery
+		want  url.Values
 	}{
 		{
-			name:    "defaults sends nothing",
-			request: ListTasksInProjectViewRequest{ProjectID: 5, ViewID: 7},
-			want:    url.Values{},
+			name:  "defaults sends nothing",
+			query: TaskListQuery{},
+			want:  url.Values{},
 		},
 		{
 			name: "all parameters set",
-			request: ListTasksInProjectViewRequest{
-				ProjectID:          5,
-				ViewID:             7,
+			query: TaskListQuery{
 				Query:              "milk",
 				Filter:             "done = false && due_date < now+7d",
 				FilterTimeZone:     "Europe/Berlin",
@@ -531,26 +524,24 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 			},
 		},
 		{
-			name:    "query only",
-			request: ListTasksInProjectViewRequest{ProjectID: 5, ViewID: 7, Query: "milk"},
+			name:  "query only",
+			query: TaskListQuery{Query: "milk"},
 			want: url.Values{
 				"q": {"milk"},
 			},
 		},
 		{
 			name: "filter only",
-			request: ListTasksInProjectViewRequest{
-				ProjectID: 5,
-				ViewID:    7,
-				Filter:    "priority >= 3 || labels in 1, 2",
+			query: TaskListQuery{
+				Filter: "priority >= 3 || labels in 1, 2",
 			},
 			want: url.Values{
 				"filter": {"priority >= 3 || labels in 1, 2"},
 			},
 		},
 		{
-			name:    "pagination only",
-			request: ListTasksInProjectViewRequest{ProjectID: 5, ViewID: 7, Page: 3, PerPage: 10},
+			name:  "pagination only",
+			query: TaskListQuery{Page: 3, PerPage: 10},
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
@@ -568,7 +559,7 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			_, err := client.ListTasksInProjectView(context.Background(), tt.request)
+			_, err := client.ListTasksInProjectView(context.Background(), 5, 7, tt.query)
 			if err != nil {
 				t.Fatalf("ListTasksInProjectView returned error: %v", err)
 			}
@@ -597,10 +588,7 @@ func TestListTasksInProjectView_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-		ProjectID: 5,
-		ViewID:    7,
-	})
+	got, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{})
 	if err != nil {
 		t.Fatalf("ListTasksInProjectView returned error: %v", err)
 	}
@@ -628,10 +616,7 @@ func TestListTasksInProjectView_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-		ProjectID: 5,
-		ViewID:    7,
-	})
+	resp, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -658,10 +643,7 @@ func TestListTasksInProjectView_InvalidResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-		ProjectID: 5,
-		ViewID:    7,
-	})
+	resp, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -676,10 +658,7 @@ func TestListTasksInProjectView_InvalidResponse(t *testing.T) {
 
 func TestListTasksInProjectView_RequestError(t *testing.T) {
 	client := newTestClient("http://[::1")
-	resp, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-		ProjectID: 5,
-		ViewID:    7,
-	})
+	resp, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -710,10 +689,7 @@ func TestListTasksInProjectView_InvalidIDs(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListTasksInProjectView(context.Background(), ListTasksInProjectViewRequest{
-				ProjectID: tt.projectID,
-				ViewID:    tt.viewID,
-			})
+			resp, err := client.ListTasksInProjectView(context.Background(), tt.projectID, tt.viewID, TaskListQuery{})
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -740,7 +716,7 @@ func TestListTasksInProjectView_CanceledContext(t *testing.T) {
 	cancel()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListTasksInProjectView(ctx, ListTasksInProjectViewRequest{ProjectID: 5, ViewID: 7})
+	_, err := client.ListTasksInProjectView(ctx, 5, 7, TaskListQuery{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
