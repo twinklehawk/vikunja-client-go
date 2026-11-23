@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -62,6 +63,53 @@ func (c *Client) CreateTask(
 	return &respBody, nil
 }
 
+// ListTasksInProjectRequest specifies the parameters for the ListTasksInProject API.
+type ListTasksInProjectRequest struct {
+	// ProjectID is the ID of the project.
+	ProjectID int64
+	// Query is the search query.
+	Query string
+	// Filter is the query to match tasks by, e.g. "done = false && due_date < now+7d".
+	// Combine conditions with && or || (not and/or) and group them with parentheses.
+	// Operators: =, !=, >, >=, <, <=, like, in, not in.
+	Filter string
+	// FilterTimeZone is the timezone used to resolve relative dates in the filter.
+	FilterTimeZone string
+	// FilterIncludeNulls controls if the filter should match when the task's field is null.
+	FilterIncludeNulls bool
+	// Format determines how rich-text fields are exchanged. Supported values are "html" and "markdown".
+	Format string
+	// Page is a 1-based page number, default is 1.
+	Page int64
+	// PerPage is the number of items per page, default is controlled by the server configuration.
+	PerPage int64
+}
+
+// ListTasksInProject returns the tasks in a project, paginated and flat.
+// Requires read access to the project.
+func (c *Client) ListTasksInProject(
+	ctx context.Context,
+	request ListTasksInProjectRequest,
+) (*PaginatedTasksResponse, error) {
+	if request.ProjectID <= 0 {
+		return nil, fmt.Errorf("projectID must be a positive ID, got %d", request.ProjectID)
+	}
+
+	return c.listTasks(
+		ctx,
+		fmt.Sprintf("/api/v2/projects/%d/tasks", request.ProjectID),
+		taskListQuery{
+			Query:              request.Query,
+			Filter:             request.Filter,
+			FilterTimeZone:     request.FilterTimeZone,
+			FilterIncludeNulls: request.FilterIncludeNulls,
+			Format:             request.Format,
+			Page:               request.Page,
+			PerPage:            request.PerPage,
+		},
+	)
+}
+
 // ListTasksInProjectViewRequest specifies the parameters for the ListTasksInProjectView API.
 type ListTasksInProjectViewRequest struct {
 	// ProjectID is the ID of the project.
@@ -98,37 +146,70 @@ func (c *Client) ListTasksInProjectView(
 		return nil, fmt.Errorf("viewID must be a positive ID, got %d", request.ViewID)
 	}
 
-	req, err := c.newRequest(
+	return c.listTasks(
 		ctx,
-		http.MethodGet,
 		fmt.Sprintf("/api/v2/projects/%d/views/%d/tasks", request.ProjectID, request.ViewID),
+		taskListQuery{
+			Query:              request.Query,
+			Filter:             request.Filter,
+			FilterTimeZone:     request.FilterTimeZone,
+			FilterIncludeNulls: request.FilterIncludeNulls,
+			Format:             request.Format,
+			Page:               request.Page,
+			PerPage:            request.PerPage,
+		},
 	)
+}
+
+// taskListQuery holds the query parameters shared by the task list APIs.
+type taskListQuery struct {
+	Query              string
+	Filter             string
+	FilterTimeZone     string
+	FilterIncludeNulls bool
+	Format             string
+	Page               int64
+	PerPage            int64
+}
+
+// addTo adds the non-zero parameters to q.
+func (p taskListQuery) addTo(q url.Values) {
+	if p.Query != "" {
+		q.Add("q", p.Query)
+	}
+	if p.Filter != "" {
+		q.Add("filter", p.Filter)
+	}
+	if p.FilterTimeZone != "" {
+		q.Add("filter_timezone", p.FilterTimeZone)
+	}
+	if p.FilterIncludeNulls {
+		q.Add("filter_include_nulls", "true")
+	}
+	if p.Page != 0 {
+		q.Add("page", strconv.FormatInt(p.Page, 10))
+	}
+	if p.PerPage != 0 {
+		q.Add("per_page", strconv.FormatInt(p.PerPage, 10))
+	}
+	if p.Format != "" {
+		q.Add("format", p.Format)
+	}
+}
+
+// listTasks sends a GET request for a paginated list of tasks to path with the given query parameters.
+func (c *Client) listTasks(
+	ctx context.Context,
+	path string,
+	params taskListQuery,
+) (*PaginatedTasksResponse, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, path)
 	if err != nil {
 		return nil, err
 	}
 
 	q := req.URL.Query()
-	if request.Query != "" {
-		q.Add("q", request.Query)
-	}
-	if request.Filter != "" {
-		q.Add("filter", request.Filter)
-	}
-	if request.FilterTimeZone != "" {
-		q.Add("filter_timezone", request.FilterTimeZone)
-	}
-	if request.FilterIncludeNulls {
-		q.Add("filter_include_nulls", "true")
-	}
-	if request.Page != 0 {
-		q.Add("page", strconv.FormatInt(request.Page, 10))
-	}
-	if request.PerPage != 0 {
-		q.Add("per_page", strconv.FormatInt(request.PerPage, 10))
-	}
-	if request.Format != "" {
-		q.Add("format", request.Format)
-	}
+	params.addTo(q)
 	req.URL.RawQuery = q.Encode()
 
 	respBody := PaginatedTasksResponse{}
