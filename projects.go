@@ -15,8 +15,8 @@ type Project struct {
 	Title string `json:"title"`
 }
 
-// ListProjectsRequest specifies the parameters for searching for projects.
-type ListProjectsRequest struct {
+// ProjectListQuery specifies the parameters for searching for projects.
+type ProjectListQuery struct {
 	// Query is the search query.
 	Query string
 	// IsArchived controls if archived projects are returned, by default archived projects are excluded.
@@ -53,7 +53,7 @@ type PaginatedProjectsResponse struct {
 // IsArchived=true. Pass Expand=permissions to include each project's max_permission for the caller.
 func (c *Client) ListProjects(
 	ctx context.Context,
-	request ListProjectsRequest,
+	request ProjectListQuery,
 ) (*PaginatedProjectsResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/v2/projects")
 	if err != nil {
@@ -94,7 +94,7 @@ func (c *Client) ListProjects(
 // yielded with a zero [Project] and iteration stops.
 func (c *Client) ListProjectsStream(
 	ctx context.Context,
-	request ListProjectsRequest,
+	request ProjectListQuery,
 ) iter.Seq2[Project, error] {
 	return func(yield func(Project, error) bool) {
 		req := request

@@ -22,7 +22,7 @@ func TestListProjectViews_SendsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: 5})
+	_, err := client.ListProjectViews(context.Background(), 5, ProjectViewListQuery{})
 	if err != nil {
 		t.Fatalf("ListProjectViews returned error: %v", err)
 	}
@@ -43,22 +43,21 @@ func TestListProjectViews_SendsRequest(t *testing.T) {
 
 func TestListProjectViews_QueryParameters(t *testing.T) {
 	tests := []struct {
-		name    string
-		request ListProjectViewsRequest
-		want    url.Values
+		name  string
+		query ProjectViewListQuery
+		want  url.Values
 	}{
 		{
-			name:    "defaults sends nothing",
-			request: ListProjectViewsRequest{ProjectID: 5},
-			want:    url.Values{},
+			name:  "defaults sends nothing",
+			query: ProjectViewListQuery{},
+			want:  url.Values{},
 		},
 		{
 			name: "all parameters set",
-			request: ListProjectViewsRequest{
-				ProjectID: 5,
-				Query:     "kanban board",
-				Page:      2,
-				PerPage:   50,
+			query: ProjectViewListQuery{
+				Query:   "kanban board",
+				Page:    2,
+				PerPage: 50,
 			},
 			want: url.Values{
 				"q":        {"kanban board"},
@@ -67,15 +66,15 @@ func TestListProjectViews_QueryParameters(t *testing.T) {
 			},
 		},
 		{
-			name:    "query only",
-			request: ListProjectViewsRequest{ProjectID: 5, Query: "list"},
+			name:  "query only",
+			query: ProjectViewListQuery{Query: "list"},
 			want: url.Values{
 				"q": {"list"},
 			},
 		},
 		{
-			name:    "pagination only",
-			request: ListProjectViewsRequest{ProjectID: 5, Page: 3, PerPage: 10},
+			name:  "pagination only",
+			query: ProjectViewListQuery{Page: 3, PerPage: 10},
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
@@ -93,7 +92,7 @@ func TestListProjectViews_QueryParameters(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			_, err := client.ListProjectViews(context.Background(), tt.request)
+			_, err := client.ListProjectViews(context.Background(), 5, tt.query)
 			if err != nil {
 				t.Fatalf("ListProjectViews returned error: %v", err)
 			}
@@ -124,7 +123,7 @@ func TestListProjectViews_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: 5})
+	got, err := client.ListProjectViews(context.Background(), 5, ProjectViewListQuery{})
 	if err != nil {
 		t.Fatalf("ListProjectViews returned error: %v", err)
 	}
@@ -154,7 +153,7 @@ func TestListProjectViews_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: 5})
+	resp, err := client.ListProjectViews(context.Background(), 5, ProjectViewListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -181,7 +180,7 @@ func TestListProjectViews_InvalidResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: 5})
+	resp, err := client.ListProjectViews(context.Background(), 5, ProjectViewListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -196,7 +195,7 @@ func TestListProjectViews_InvalidResponse(t *testing.T) {
 
 func TestListProjectViews_RequestError(t *testing.T) {
 	client := newTestClient("http://[::1")
-	resp, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: 5})
+	resp, err := client.ListProjectViews(context.Background(), 5, ProjectViewListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -223,7 +222,7 @@ func TestListProjectViews_InvalidProjectID(t *testing.T) {
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListProjectViews(context.Background(), ListProjectViewsRequest{ProjectID: tt.projectID})
+			resp, err := client.ListProjectViews(context.Background(), tt.projectID, ProjectViewListQuery{})
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -250,7 +249,7 @@ func TestListProjectViews_CanceledContext(t *testing.T) {
 	cancel()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListProjectViews(ctx, ListProjectViewsRequest{ProjectID: 5})
+	_, err := client.ListProjectViews(ctx, 5, ProjectViewListQuery{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}

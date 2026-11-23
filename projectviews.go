@@ -32,10 +32,8 @@ type ProjectView struct {
 	ViewKind ProjectViewKind `json:"view_kind"`
 }
 
-// ListProjectViewsRequest specifies the parameters for searching for project views.
-type ListProjectViewsRequest struct {
-	// ProjectID is the project to search.
-	ProjectID int64
+// ProjectViewListQuery specifies the parameters for searching for project views.
+type ProjectViewListQuery struct {
 	// Query is the search query.
 	Query string
 	// Page is a 1-based page number, default is 1.
@@ -62,30 +60,31 @@ type PaginatedProjectViewsResponse struct {
 // ListProjectViews returns all views of a project. Requires read access to the project.
 func (c *Client) ListProjectViews(
 	ctx context.Context,
-	request ListProjectViewsRequest,
+	projectID int64,
+	query ProjectViewListQuery,
 ) (*PaginatedProjectViewsResponse, error) {
-	if request.ProjectID <= 0 {
-		return nil, fmt.Errorf("projectID must be a positive ID, got %d", request.ProjectID)
+	if projectID <= 0 {
+		return nil, fmt.Errorf("projectID must be a positive ID, got %d", projectID)
 	}
 
 	req, err := c.newRequest(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("/api/v2/projects/%d/views", request.ProjectID),
+		fmt.Sprintf("/api/v2/projects/%d/views", projectID),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	q := req.URL.Query()
-	if request.Query != "" {
-		q.Add("q", request.Query)
+	if query.Query != "" {
+		q.Add("q", query.Query)
 	}
-	if request.Page != 0 {
-		q.Add("page", strconv.FormatInt(request.Page, 10))
+	if query.Page != 0 {
+		q.Add("page", strconv.FormatInt(query.Page, 10))
 	}
-	if request.PerPage != 0 {
-		q.Add("per_page", strconv.FormatInt(request.PerPage, 10))
+	if query.PerPage != 0 {
+		q.Add("per_page", strconv.FormatInt(query.PerPage, 10))
 	}
 	req.URL.RawQuery = q.Encode()
 
