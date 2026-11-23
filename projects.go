@@ -15,8 +15,8 @@ type Project struct {
 	Title string `json:"title"`
 }
 
-// ListProjectsRequest specifies the parameters for searching for projects.
-type ListProjectsRequest struct {
+// ProjectListQuery specifies the parameters for searching for projects.
+type ProjectListQuery struct {
 	// Query is the search query.
 	Query string
 	// IsArchived controls if archived projects are returned, by default archived projects are excluded.
@@ -34,13 +34,18 @@ type ListProjectsRequest struct {
 }
 
 // ListProjectsResponse contains the list of [Project]s and pagination information returned
-// from a ListProjects request.
-type ListProjectsResponse struct {
-	Items      []Project `json:"items"`
-	Page       int64     `json:"page"`
-	PerPage    int64     `json:"per_page"`
-	Total      int64     `json:"total"`
-	TotalPages int64     `json:"total_pages"`
+// from a projects request.
+type PaginatedProjectsResponse struct {
+	// Items is the list of [Project]s matching the request.
+	Items []Project `json:"items"`
+	// Page is the current 1-based page number.
+	Page int64 `json:"page"`
+	// PerPage is the number of items per page.
+	PerPage int64 `json:"per_page"`
+	// Total is the total number of items matching the request.
+	Total int64 `json:"total"`
+	// TotalPages is the total number of pages of matching items.
+	TotalPages int64 `json:"total_pages"`
 }
 
 // ListProjects returns the projects the authenticated user has access to (owned plus shared,
@@ -48,8 +53,8 @@ type ListProjectsResponse struct {
 // IsArchived=true. Pass Expand=permissions to include each project's max_permission for the caller.
 func (c *Client) ListProjects(
 	ctx context.Context,
-	request ListProjectsRequest,
-) (*ListProjectsResponse, error) {
+	request ProjectListQuery,
+) (*PaginatedProjectsResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/v2/projects")
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func (c *Client) ListProjects(
 	}
 	req.URL.RawQuery = q.Encode()
 
-	respBody := ListProjectsResponse{}
+	respBody := PaginatedProjectsResponse{}
 	err = c.do(req, &respBody)
 	if err != nil {
 		return nil, err
@@ -89,7 +94,7 @@ func (c *Client) ListProjects(
 // yielded with a zero [Project] and iteration stops.
 func (c *Client) ListProjectsStream(
 	ctx context.Context,
-	request ListProjectsRequest,
+	request ProjectListQuery,
 ) iter.Seq2[Project, error] {
 	return func(yield func(Project, error) bool) {
 		req := request

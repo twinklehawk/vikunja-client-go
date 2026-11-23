@@ -21,7 +21,7 @@ func TestListProjects_SendsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListProjects(context.Background(), ListProjectsRequest{})
+	_, err := client.ListProjects(context.Background(), ProjectListQuery{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestListProjects_RemovesDuplicateSlashInURL(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL + "/")
-	_, err := client.ListProjects(context.Background(), ListProjectsRequest{})
+	_, err := client.ListProjects(context.Background(), ProjectListQuery{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
 	}
@@ -63,17 +63,17 @@ func TestListProjects_RemovesDuplicateSlashInURL(t *testing.T) {
 func TestListProjects_QueryParameters(t *testing.T) {
 	tests := []struct {
 		name    string
-		request ListProjectsRequest
+		request ProjectListQuery
 		want    url.Values
 	}{
 		{
 			name:    "defaults sends nothing",
-			request: ListProjectsRequest{},
+			request: ProjectListQuery{},
 			want:    url.Values{},
 		},
 		{
 			name: "all parameters set",
-			request: ListProjectsRequest{
+			request: ProjectListQuery{
 				Query:      "my project",
 				IsArchived: true,
 				Expand:     "permissions",
@@ -92,14 +92,14 @@ func TestListProjects_QueryParameters(t *testing.T) {
 		},
 		{
 			name:    "query only",
-			request: ListProjectsRequest{Query: "inbox"},
+			request: ProjectListQuery{Query: "inbox"},
 			want: url.Values{
 				"q": {"inbox"},
 			},
 		},
 		{
 			name:    "pagination only",
-			request: ListProjectsRequest{Page: 3, PerPage: 10},
+			request: ProjectListQuery{Page: 3, PerPage: 10},
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
@@ -146,12 +146,12 @@ func TestListProjects_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjects(context.Background(), ListProjectsRequest{})
+	resp, err := client.ListProjects(context.Background(), ProjectListQuery{})
 	if err != nil {
 		t.Fatalf("ListProjects returned error: %v", err)
 	}
 
-	want := &ListProjectsResponse{
+	want := &PaginatedProjectsResponse{
 		Items: []Project{
 			{ID: 1, Title: "Inbox"},
 			{ID: 42, Title: "Work"},
@@ -174,7 +174,7 @@ func TestListProjects_ApiError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjects(context.Background(), ListProjectsRequest{})
+	resp, err := client.ListProjects(context.Background(), ProjectListQuery{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -207,7 +207,7 @@ func TestListProjects_CanceledContext(t *testing.T) {
 	cancel()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListProjects(ctx, ListProjectsRequest{})
+	_, err := client.ListProjects(ctx, ProjectListQuery{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
@@ -239,7 +239,7 @@ func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	var got []Project
-	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{Query: "x", PerPage: 2, Page: 5}) {
+	for p, err := range client.ListProjectsStream(context.Background(), ProjectListQuery{Query: "x", PerPage: 2, Page: 5}) {
 		if err != nil {
 			t.Fatalf("ListProjectsStream returned error: %v", err)
 		}
@@ -268,7 +268,7 @@ func TestListProjectsStream_StopsOnBreak(t *testing.T) {
 	}, &gotQueries)
 
 	client := newTestClient(server.URL)
-	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+	for p, err := range client.ListProjectsStream(context.Background(), ProjectListQuery{}) {
 		if err != nil {
 			t.Fatalf("ListProjectsStream returned error: %v", err)
 		}
@@ -291,7 +291,7 @@ func TestListProjectsStream_StopsOnEmptyPage(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	count := 0
-	for _, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+	for _, err := range client.ListProjectsStream(context.Background(), ProjectListQuery{}) {
 		if err != nil {
 			t.Fatalf("ListProjectsStream returned error: %v", err)
 		}
@@ -319,7 +319,7 @@ func TestListProjectsStream_YieldsError(t *testing.T) {
 	client := newTestClient(server.URL)
 	var got []Project
 	var gotErrs []error
-	for p, err := range client.ListProjectsStream(context.Background(), ListProjectsRequest{}) {
+	for p, err := range client.ListProjectsStream(context.Background(), ProjectListQuery{}) {
 		if err != nil {
 			gotErrs = append(gotErrs, err)
 			continue
