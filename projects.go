@@ -34,13 +34,18 @@ type ListProjectsRequest struct {
 }
 
 // ListProjectsResponse contains the list of [Project]s and pagination information returned
-// from a ListProjects request.
-type ListProjectsResponse struct {
-	Items      []Project `json:"items"`
-	Page       int64     `json:"page"`
-	PerPage    int64     `json:"per_page"`
-	Total      int64     `json:"total"`
-	TotalPages int64     `json:"total_pages"`
+// from a projects request.
+type PaginatedProjectsResponse struct {
+	// Items is the list of [Project]s matching the request.
+	Items []Project `json:"items"`
+	// Page is the current 1-based page number.
+	Page int64 `json:"page"`
+	// PerPage is the number of items per page.
+	PerPage int64 `json:"per_page"`
+	// Total is the total number of items matching the request.
+	Total int64 `json:"total"`
+	// TotalPages is the total number of pages of matching items.
+	TotalPages int64 `json:"total_pages"`
 }
 
 // ListProjects returns the projects the authenticated user has access to (owned plus shared,
@@ -49,7 +54,7 @@ type ListProjectsResponse struct {
 func (c *Client) ListProjects(
 	ctx context.Context,
 	request ListProjectsRequest,
-) (*ListProjectsResponse, error) {
+) (*PaginatedProjectsResponse, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/v2/projects")
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func (c *Client) ListProjects(
 	}
 	req.URL.RawQuery = q.Encode()
 
-	respBody := ListProjectsResponse{}
+	respBody := PaginatedProjectsResponse{}
 	err = c.do(req, &respBody)
 	if err != nil {
 		return nil, err

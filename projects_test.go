@@ -151,7 +151,7 @@ func TestListProjects_DecodesResponse(t *testing.T) {
 		t.Fatalf("ListProjects returned error: %v", err)
 	}
 
-	want := &ListProjectsResponse{
+	want := &PaginatedProjectsResponse{
 		Items: []Project{
 			{ID: 1, Title: "Inbox"},
 			{ID: 42, Title: "Work"},
