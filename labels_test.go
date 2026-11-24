@@ -6,9 +6,217 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestListLabels_SendsRequest(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := client.ListLabels(context.Background(), LabelListQuery{})
+	if err != nil {
+		t.Fatalf("ListLabels returned error: %v", err)
+	}
+
+	if gotReq.Method != http.MethodGet {
+		t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+	}
+	if gotReq.URL.Path != "/api/v2/labels" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/labels")
+	}
+	if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+	}
+	if got := gotReq.Header.Get("Accept"); got != "application/json" {
+		t.Errorf("Accept header = %q, want %q", got, "application/json")
+	}
+	if gotReq.ContentLength != 0 {
+		t.Errorf("ContentLength = %d, want 0", gotReq.ContentLength)
+	}
+}
+
+func TestListLabels_QueryParameters(t *testing.T) {
+	tests := []struct {
+		name    string
+		request LabelListQuery
+		want    url.Values
+	}{
+		{
+			name:    "defaults sends nothing",
+			request: LabelListQuery{},
+			want:    url.Values{},
+		},
+		{
+			name:    "all parameters set",
+			request: LabelListQuery{Query: "urgent work", Page: 2, PerPage: 50},
+			want: url.Values{
+				"q":        {"urgent work"},
+				"page":     {"2"},
+				"per_page": {"50"},
+			},
+		},
+		{
+			name:    "query only",
+			request: LabelListQuery{Query: "bug"},
+			want:    url.Values{"q": {"bug"}},
+		},
+		{
+			name:    "pagination only",
+			request: LabelListQuery{Page: 3, PerPage: 10},
+			want: url.Values{
+				"page":     {"3"},
+				"per_page": {"10"},
+			},
+		},
+		{
+			name:    "special characters are encoded",
+			request: LabelListQuery{Query: "a&b=c?d"},
+			want:    url.Values{"q": {"a&b=c?d"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQuery url.Values
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotQuery = r.URL.Query()
+				_, _ = w.Write([]byte(`{"items":[]}`))
+			}))
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			_, err := client.ListLabels(context.Background(), tt.request)
+			if err != nil {
+				t.Fatalf("ListLabels returned error: %v", err)
+			}
+
+			if !reflect.DeepEqual(gotQuery, tt.want) {
+				t.Errorf("query = %v, want %v", gotQuery, tt.want)
+			}
+		})
+	}
+}
+
+func TestListLabels_DecodesResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{"id": 1, "title": "Bug", "description": "Something is broken"},
+				{"id": 7, "title": "Feature", "description": ""}
+			],
+			"page": 1,
+			"per_page": 50,
+			"total": 2,
+			"total_pages": 1
+		}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	resp, err := client.ListLabels(context.Background(), LabelListQuery{})
+	if err != nil {
+		t.Fatalf("ListLabels returned error: %v", err)
+	}
+
+	want := &PaginatedLabelResponse{
+		Items: []Label{
+			{ID: 1, Title: "Bug", Description: "Something is broken"},
+			{ID: 7, Title: "Feature", Description: ""},
+		},
+		Page:       1,
+		PerPage:    50,
+		Total:      2,
+		TotalPages: 1,
+	}
+	if !reflect.DeepEqual(resp, want) {
+		t.Errorf("response = %+v, want %+v", resp, want)
+	}
+}
+
+func TestListLabels_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"invalid token"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	resp, err := client.ListLabels(context.Background(), LabelListQuery{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp != nil {
+		t.Errorf("response = %+v, want nil", resp)
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
+	}
+	if apiErr.Message != `{"message":"invalid token"}` {
+		t.Errorf("Message = %q, want %q", apiErr.Message, `{"message":"invalid token"}`)
+	}
+}
+
+func TestListLabels_InvalidResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	resp, err := client.ListLabels(context.Background(), LabelListQuery{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp != nil {
+		t.Errorf("response = %+v, want nil", resp)
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Errorf("error = %v (%T), want wrapped *json.SyntaxError", err, err)
+	}
+}
+
+func TestListLabels_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	resp, err := client.ListLabels(context.Background(), LabelListQuery{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp != nil {
+		t.Errorf("response = %+v, want nil", resp)
+	}
+}
+
+func TestListLabels_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	_, err := client.ListLabels(ctx, LabelListQuery{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", err)
+	}
+}
 
 func TestAddTaskLabel_SendsRequest(t *testing.T) {
 	var gotReq *http.Request
