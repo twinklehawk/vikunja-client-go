@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 )
 
 // Label contains details for a Vikunja label.
@@ -14,6 +15,62 @@ type Label struct {
 	Title string `json:"title"`
 	// Description is a description of the label.
 	Description string `json:"description"`
+}
+
+// PaginatedLabelResponse contains the list of [Label]s and pagination information returned
+// from a labels request.
+type PaginatedLabelResponse struct {
+	// Items is the list of [Label]s matching the request.
+	Items []Label `json:"items"`
+	// Page is the current 1-based page number.
+	Page int64 `json:"page"`
+	// PerPage is the number of items per page.
+	PerPage int64 `json:"per_page"`
+	// Total is the total number of items matching the request.
+	Total int64 `json:"total"`
+	// TotalPages is the total number of pages of matching items.
+	TotalPages int64 `json:"total_pages"`
+}
+
+// LabelListQuery specifies the parameters for searching for labels.
+type LabelListQuery struct {
+	// Query is the search query.
+	Query string
+	// Page is a 1-based page number, default is 1.
+	Page int64
+	// PerPage is the number of items per page, default is controlled by the server configuration.
+	PerPage int64
+}
+
+// ListLabels returns the labels visible to the authenticated user — their own plus any used on tasks they can access.
+func (c *Client) ListLabels(ctx context.Context, query LabelListQuery) (*PaginatedLabelResponse, error) {
+	req, err := c.newRequest(
+		ctx,
+		http.MethodGet,
+		"/api/v2/labels",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	if query.Query != "" {
+		q.Add("q", query.Query)
+	}
+	if query.Page != 0 {
+		q.Add("page", strconv.FormatInt(query.Page, 10))
+	}
+	if query.PerPage != 0 {
+		q.Add("per_page", strconv.FormatInt(query.PerPage, 10))
+	}
+	req.URL.RawQuery = q.Encode()
+
+	respBody := PaginatedLabelResponse{}
+	err = c.do(req, &respBody)
+	if err != nil {
+		return nil, err
+	}
+	return &respBody, nil
 }
 
 // AddTaskLabelRequest specifies the parameters for the AddTaskLabel API.
