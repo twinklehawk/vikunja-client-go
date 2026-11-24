@@ -2,6 +2,7 @@ package vikunja
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"net/http"
 	"strconv"
@@ -33,7 +34,7 @@ type ProjectListQuery struct {
 	PerPage int64
 }
 
-// ListProjectsResponse contains the list of [Project]s and pagination information returned
+// PaginatedProjectsResponse contains the list of [Project]s and pagination information returned
 // from a projects request.
 type PaginatedProjectsResponse struct {
 	// Items is the list of [Project]s matching the request.
@@ -117,4 +118,82 @@ func (c *Client) ListProjectsStream(
 			req.Page++
 		}
 	}
+}
+
+// Bucket contains data for a Vikunja bucket.
+type Bucket struct {
+	ID            int64   `json:"id"`
+	Title         string  `json:"title"`
+	Position      float64 `json:"position"`
+	ProjectViewID int64   `json:"project_view_id"`
+}
+
+// PaginatedBucketsResponse contains the list of [Bucket]s and pagination information returned
+// from a buckets request.
+type PaginatedBucketsResponse struct {
+	// Items is the list of [Bucket]s matching the request.
+	Items []Bucket `json:"items"`
+	// Page is the current 1-based page number.
+	Page int64 `json:"page"`
+	// PerPage is the number of items per page.
+	PerPage int64 `json:"per_page"`
+	// Total is the total number of items matching the request.
+	Total int64 `json:"total"`
+	// TotalPages is the total number of pages of matching items.
+	TotalPages int64 `json:"total_pages"`
+}
+
+// ProjectViewBucketListQuery specifies the parameters for searching for project view buckets.
+type ProjectViewBucketListQuery struct {
+	// Query is the search query.
+	Query string
+	// Page is a 1-based page number, default is 1.
+	Page int64
+	// PerPage is the number of items per page, default is controlled by the server configuration.
+	PerPage int64
+}
+
+// ListProjectViewBuckets returns all kanban buckets of a project view, ordered by position.
+// The list is not paginated by the server but is returned in the standard list envelope.
+// Requires read access to the project.
+func (c *Client) ListProjectViewBuckets(
+	ctx context.Context,
+	projectID int64,
+	projectViewID int64,
+	query ProjectViewBucketListQuery,
+) (*PaginatedBucketsResponse, error) {
+	if projectID <= 0 {
+		return nil, fmt.Errorf("projectID must be a positive ID, got %d", projectID)
+	}
+	if projectViewID <= 0 {
+		return nil, fmt.Errorf("projectViewID must be a positive ID, got %d", projectViewID)
+	}
+
+	req, err := c.newRequest(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("/api/v2/projects/%d/views/%d/buckets", projectID, projectViewID),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	if query.Query != "" {
+		q.Add("q", query.Query)
+	}
+	if query.Page != 0 {
+		q.Add("page", strconv.FormatInt(query.Page, 10))
+	}
+	if query.PerPage != 0 {
+		q.Add("per_page", strconv.FormatInt(query.PerPage, 10))
+	}
+	req.URL.RawQuery = q.Encode()
+
+	respBody := PaginatedBucketsResponse{}
+	err = c.do(req, &respBody)
+	if err != nil {
+		return nil, err
+	}
+	return &respBody, nil
 }
