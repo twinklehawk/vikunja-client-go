@@ -57,7 +57,9 @@ type PaginatedProjectViewsResponse struct {
 	TotalPages int64 `json:"total_pages"`
 }
 
-// ListProjectViews returns all views of a project. Requires read access to the project.
+// ListProjectViews returns all views of a project. The list is not paginated by the server but is
+// returned in the standard list envelope.
+// Requires read access to the project.
 func (c *Client) ListProjectViews(
 	ctx context.Context,
 	projectID int64,

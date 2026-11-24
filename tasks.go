@@ -155,6 +155,39 @@ func (c *Client) ListTasksInProjectView(
 	)
 }
 
+// ListTasksInProjectViewStream returns an iterator over all tasks in a project view matching the request,
+// fetching pages on demand.
+// query.Page is ignored; iteration always starts at page 1. If a request fails, the error is
+// yielded with a zero [Task] and iteration stops.
+func (c *Client) ListTasksInProjectViewStream(
+	ctx context.Context,
+	projectID int64,
+	viewID int64,
+	query TaskListQuery,
+) iter.Seq2[Task, error] {
+	return func(yield func(Task, error) bool) {
+		q := query
+		q.Page = 1
+
+		for {
+			resp, err := c.ListTasksInProjectView(ctx, projectID, viewID, q)
+			if err != nil {
+				yield(Task{}, err)
+				return
+			}
+			for _, item := range resp.Items {
+				if !yield(item, nil) {
+					return
+				}
+			}
+			if len(resp.Items) == 0 || q.Page >= resp.TotalPages {
+				return
+			}
+			q.Page++
+		}
+	}
+}
+
 // addTo adds the non-zero parameters to q.
 func (p TaskListQuery) addTo(q url.Values) {
 	if p.Query != "" {
