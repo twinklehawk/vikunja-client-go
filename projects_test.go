@@ -213,8 +213,8 @@ func TestListProjects_CanceledContext(t *testing.T) {
 	}
 }
 
-// pagedProjectsServer serves pages of projects, recording the query of each request.
-func pagedProjectsServer(t *testing.T, pages []string, gotQueries *[]url.Values) *httptest.Server {
+// pagedServer serves pages of projects, recording the query of each request.
+func pagedServer(t *testing.T, pages []string, gotQueries *[]url.Values) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*gotQueries = append(*gotQueries, r.URL.Query())
@@ -232,7 +232,7 @@ func pagedProjectsServer(t *testing.T, pages []string, gotQueries *[]url.Values)
 
 func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 	var gotQueries []url.Values
-	server := pagedProjectsServer(t, []string{
+	server := pagedServer(t, []string{
 		`{"items":[{"id":1,"title":"Inbox"},{"id":2,"title":"Work"}],"page":1,"total_pages":2}`,
 		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
 	}, &gotQueries)
@@ -262,7 +262,7 @@ func TestListProjectsStream_IteratesAllPages(t *testing.T) {
 
 func TestListProjectsStream_StopsOnBreak(t *testing.T) {
 	var gotQueries []url.Values
-	server := pagedProjectsServer(t, []string{
+	server := pagedServer(t, []string{
 		`{"items":[{"id":1,"title":"Inbox"},{"id":2,"title":"Work"}],"page":1,"total_pages":2}`,
 		`{"items":[{"id":3,"title":"Home"}],"page":2,"total_pages":2}`,
 	}, &gotQueries)
@@ -284,7 +284,7 @@ func TestListProjectsStream_StopsOnBreak(t *testing.T) {
 
 func TestListProjectsStream_StopsOnEmptyPage(t *testing.T) {
 	var gotQueries []url.Values
-	server := pagedProjectsServer(t, []string{
+	server := pagedServer(t, []string{
 		`{"items":[{"id":1,"title":"Inbox"}],"total_pages":5}`,
 		`{"items":[],"total_pages":5}`,
 	}, &gotQueries)
