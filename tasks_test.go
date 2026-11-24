@@ -462,6 +462,246 @@ func TestListTasksInProject_CanceledContext(t *testing.T) {
 	}
 }
 
+func TestListTasksInProjectStream_IteratesAllPages(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk","project_id":5},{"id":2,"title":"Buy eggs","project_id":5}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Buy bread","project_id":5}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []Task
+	query := TaskListQuery{Filter: "done = false", PerPage: 2, Page: 5}
+	for task, err := range client.ListTasksInProjectStream(context.Background(), 5, query) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
+		}
+		got = append(got, task)
+	}
+
+	want := []Task{
+		{ID: 1, Title: "Buy milk", ProjectID: 5},
+		{ID: 2, Title: "Buy eggs", ProjectID: 5},
+		{ID: 3, Title: "Buy bread", ProjectID: 5},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tasks = %+v, want %+v", got, want)
+	}
+
+	// query.Page is ignored: iteration starts at page 1, other parameters are passed through.
+	wantQueries := []url.Values{
+		{"filter": {"done = false"}, "page": {"1"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "page": {"2"}, "per_page": {"2"}},
+	}
+	if !reflect.DeepEqual(gotQueries, wantQueries) {
+		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
+	}
+}
+
+func TestListTasksInProjectStream_SendsRequest(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		_, _ = w.Write([]byte(`{"items":[],"total_pages":0}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	for _, err := range client.ListTasksInProjectStream(context.Background(), 5, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
+		}
+	}
+
+	if gotReq == nil {
+		t.Fatal("no request was sent")
+	}
+	if gotReq.Method != http.MethodGet {
+		t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+	}
+	if gotReq.URL.Path != "/api/v2/projects/5/tasks" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/projects/5/tasks")
+	}
+}
+
+func TestListTasksInProjectStream_StopsOnLastPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":1}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListTasksInProjectStream(context.Background(), 5, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("tasks = %d, want 1", count)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectStream_StopsOnBreak(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"},{"id":2,"title":"Buy eggs"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Buy bread"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []int64
+	for task, err := range client.ListTasksInProjectStream(context.Background(), 5, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
+		}
+		got = append(got, task.ID)
+		if task.ID == 1 {
+			break
+		}
+	}
+
+	if want := []int64{1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("task IDs = %v, want %v", got, want)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectStream_StopsOnEmptyPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"}],"total_pages":5}`,
+		`{"items":[],"total_pages":5}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListTasksInProjectStream(context.Background(), 5, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("tasks = %d, want 1", count)
+	}
+	if len(gotQueries) != 2 {
+		t.Errorf("requests = %d, want 2", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectStream_YieldsError(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	var got []Task
+	var gotErrs []error
+	for task, err := range client.ListTasksInProjectStream(context.Background(), 5, TaskListQuery{}) {
+		if err != nil {
+			if !reflect.DeepEqual(task, Task{}) {
+				t.Errorf("task yielded with error = %+v, want zero Task", task)
+			}
+			gotErrs = append(gotErrs, err)
+			continue
+		}
+		got = append(got, task)
+	}
+
+	if want := []Task{{ID: 1, Title: "Buy milk"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tasks = %+v, want %+v", got, want)
+	}
+	if len(gotErrs) != 1 {
+		t.Fatalf("errors = %v, want exactly 1", gotErrs)
+	}
+	var apiErr *APIError
+	if !errors.As(gotErrs[0], &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("error = %v, want *APIError with status 500", gotErrs[0])
+	}
+	// Iteration stops after the error; page 3 is never requested.
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2", requests)
+	}
+}
+
+func TestListTasksInProjectStream_InvalidProjectID(t *testing.T) {
+	tests := []struct {
+		name      string
+		projectID int64
+	}{
+		{name: "missing", projectID: 0},
+		{name: "negative", projectID: -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+			}))
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			var gotErrs []error
+			for task, err := range client.ListTasksInProjectStream(context.Background(), tt.projectID, TaskListQuery{}) {
+				if err == nil {
+					t.Errorf("unexpected task %+v without error", task)
+					continue
+				}
+				gotErrs = append(gotErrs, err)
+			}
+
+			if len(gotErrs) != 1 {
+				t.Fatalf("errors = %v, want exactly 1", gotErrs)
+			}
+			if !strings.Contains(gotErrs[0].Error(), "projectID") {
+				t.Errorf("error = %q, want it to mention projectID", gotErrs[0].Error())
+			}
+			if requests != 0 {
+				t.Errorf("requests = %d, want 0", requests)
+			}
+		})
+	}
+}
+
+func TestListTasksInProjectStream_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	var gotErrs []error
+	for _, err := range client.ListTasksInProjectStream(ctx, 5, TaskListQuery{}) {
+		if err != nil {
+			gotErrs = append(gotErrs, err)
+		}
+	}
+
+	if len(gotErrs) != 1 || !errors.Is(gotErrs[0], context.Canceled) {
+		t.Errorf("errors = %v, want exactly one context.Canceled", gotErrs)
+	}
+}
+
 func TestListTasksInProjectView_SendsRequest(t *testing.T) {
 	var gotReq *http.Request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -719,6 +959,250 @@ func TestListTasksInProjectView_CanceledContext(t *testing.T) {
 	_, err := client.ListTasksInProjectView(ctx, 5, 7, TaskListQuery{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
+	}
+}
+
+func TestListTasksInProjectViewStream_IteratesAllPages(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk","project_id":5,"bucket_id":3},{"id":2,"title":"Buy eggs","project_id":5,"bucket_id":3}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Buy bread","project_id":5,"bucket_id":4}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []Task
+	query := TaskListQuery{Filter: "done = false", PerPage: 2, Page: 5}
+	for task, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, query) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
+		}
+		got = append(got, task)
+	}
+
+	want := []Task{
+		{ID: 1, Title: "Buy milk", ProjectID: 5, BucketID: 3},
+		{ID: 2, Title: "Buy eggs", ProjectID: 5, BucketID: 3},
+		{ID: 3, Title: "Buy bread", ProjectID: 5, BucketID: 4},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tasks = %+v, want %+v", got, want)
+	}
+
+	// query.Page is ignored: iteration starts at page 1, other parameters are passed through.
+	wantQueries := []url.Values{
+		{"filter": {"done = false"}, "page": {"1"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "page": {"2"}, "per_page": {"2"}},
+	}
+	if !reflect.DeepEqual(gotQueries, wantQueries) {
+		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
+	}
+}
+
+func TestListTasksInProjectViewStream_SendsRequest(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		_, _ = w.Write([]byte(`{"items":[],"total_pages":0}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	for _, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
+		}
+	}
+
+	if gotReq == nil {
+		t.Fatal("no request was sent")
+	}
+	if gotReq.Method != http.MethodGet {
+		t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+	}
+	if gotReq.URL.Path != "/api/v2/projects/5/views/7/tasks" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/projects/5/views/7/tasks")
+	}
+}
+
+func TestListTasksInProjectViewStream_StopsOnLastPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":1}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("tasks = %d, want 1", count)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectViewStream_StopsOnBreak(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"},{"id":2,"title":"Buy eggs"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Buy bread"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []int64
+	for task, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
+		}
+		got = append(got, task.ID)
+		if task.ID == 1 {
+			break
+		}
+	}
+
+	if want := []int64{1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("task IDs = %v, want %v", got, want)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectViewStream_StopsOnEmptyPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Buy milk"}],"total_pages":5}`,
+		`{"items":[],"total_pages":5}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, TaskListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("tasks = %d, want 1", count)
+	}
+	if len(gotQueries) != 2 {
+		t.Errorf("requests = %d, want 2", len(gotQueries))
+	}
+}
+
+func TestListTasksInProjectViewStream_YieldsError(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	var got []Task
+	var gotErrs []error
+	for task, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, TaskListQuery{}) {
+		if err != nil {
+			if !reflect.DeepEqual(task, Task{}) {
+				t.Errorf("task yielded with error = %+v, want zero Task", task)
+			}
+			gotErrs = append(gotErrs, err)
+			continue
+		}
+		got = append(got, task)
+	}
+
+	if want := []Task{{ID: 1, Title: "Buy milk"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tasks = %+v, want %+v", got, want)
+	}
+	if len(gotErrs) != 1 {
+		t.Fatalf("errors = %v, want exactly 1", gotErrs)
+	}
+	var apiErr *APIError
+	if !errors.As(gotErrs[0], &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("error = %v, want *APIError with status 500", gotErrs[0])
+	}
+	// Iteration stops after the error; page 3 is never requested.
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2", requests)
+	}
+}
+
+func TestListTasksInProjectViewStream_InvalidIDs(t *testing.T) {
+	tests := []struct {
+		name      string
+		projectID int64
+		viewID    int64
+		wantInErr string
+	}{
+		{name: "missing project", projectID: 0, viewID: 7, wantInErr: "projectID"},
+		{name: "negative project", projectID: -1, viewID: 7, wantInErr: "projectID"},
+		{name: "missing view", projectID: 5, viewID: 0, wantInErr: "viewID"},
+		{name: "negative view", projectID: 5, viewID: -1, wantInErr: "viewID"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+			}))
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			var gotErrs []error
+			for task, err := range client.ListTasksInProjectViewStream(context.Background(), tt.projectID, tt.viewID, TaskListQuery{}) {
+				if err == nil {
+					t.Errorf("unexpected task %+v without error", task)
+					continue
+				}
+				gotErrs = append(gotErrs, err)
+			}
+
+			if len(gotErrs) != 1 {
+				t.Fatalf("errors = %v, want exactly 1", gotErrs)
+			}
+			if !strings.Contains(gotErrs[0].Error(), tt.wantInErr) {
+				t.Errorf("error = %q, want it to mention %s", gotErrs[0].Error(), tt.wantInErr)
+			}
+			if requests != 0 {
+				t.Errorf("requests = %d, want 0", requests)
+			}
+		})
+	}
+}
+
+func TestListTasksInProjectViewStream_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	var gotErrs []error
+	for _, err := range client.ListTasksInProjectViewStream(ctx, 5, 7, TaskListQuery{}) {
+		if err != nil {
+			gotErrs = append(gotErrs, err)
+		}
+	}
+
+	if len(gotErrs) != 1 || !errors.Is(gotErrs[0], context.Canceled) {
+		t.Errorf("errors = %v, want exactly one context.Canceled", gotErrs)
 	}
 }
 
