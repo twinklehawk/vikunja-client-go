@@ -105,3 +105,33 @@ func (c *Client) AddTaskLabel(
 	}
 	return nil
 }
+
+// RemoveTaskLabel removes a label from a task.
+// Requires write access to the task.
+func (c *Client) RemoveTaskLabel(
+	ctx context.Context,
+	taskID int64,
+	labelID int64,
+) error {
+	if taskID <= 0 {
+		return fmt.Errorf("taskID must be a positive ID, got %d", taskID)
+	}
+	if labelID <= 0 {
+		return fmt.Errorf("labelID must be a positive ID, got %d", labelID)
+	}
+
+	req, err := c.newRequest(
+		ctx,
+		http.MethodDelete,
+		fmt.Sprintf("/api/v2/tasks/%d/labels/%d", taskID, labelID),
+	)
+	if err != nil {
+		return err
+	}
+
+	err = c.do(req, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}

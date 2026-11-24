@@ -377,3 +377,151 @@ func TestAddTaskLabel_CanceledContext(t *testing.T) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
 }
+
+func TestRemoveTaskLabel_SendsRequest(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	err := client.RemoveTaskLabel(context.Background(), 42, 3)
+	if err != nil {
+		t.Fatalf("RemoveTaskLabel returned error: %v", err)
+	}
+
+	if gotReq.Method != http.MethodDelete {
+		t.Errorf("method = %q, want %q", gotReq.Method, http.MethodDelete)
+	}
+	if gotReq.URL.Path != "/api/v2/tasks/42/labels/3" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/tasks/42/labels/3")
+	}
+	if gotReq.URL.RawQuery != "" {
+		t.Errorf("query = %q, want empty", gotReq.URL.RawQuery)
+	}
+	if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+	}
+	if got := gotReq.Header.Get("Accept"); got != "application/json" {
+		t.Errorf("Accept header = %q, want %q", got, "application/json")
+	}
+	if gotReq.ContentLength != 0 {
+		t.Errorf("ContentLength = %d, want 0", gotReq.ContentLength)
+	}
+}
+
+func TestRemoveTaskLabel_IgnoresResponseBody(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{name: "204 empty", status: http.StatusNoContent, body: ""},
+		{name: "200 json", status: http.StatusOK, body: `{"message":"Successfully deleted."}`},
+		{name: "200 not json", status: http.StatusOK, body: "not json"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			err := client.RemoveTaskLabel(context.Background(), 42, 3)
+			if err != nil {
+				t.Errorf("RemoveTaskLabel returned error: %v", err)
+			}
+		})
+	}
+}
+
+func TestRemoveTaskLabel_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"label does not exist on task"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	err := client.RemoveTaskLabel(context.Background(), 42, 3)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusNotFound)
+	}
+	if apiErr.Message != `{"message":"label does not exist on task"}` {
+		t.Errorf("Message = %q, want %q", apiErr.Message, `{"message":"label does not exist on task"}`)
+	}
+}
+
+func TestRemoveTaskLabel_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	err := client.RemoveTaskLabel(context.Background(), 42, 3)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestRemoveTaskLabel_InvalidIDs(t *testing.T) {
+	tests := []struct {
+		name      string
+		taskID    int64
+		labelID   int64
+		wantInErr string
+	}{
+		{name: "missing task ID", taskID: 0, labelID: 3, wantInErr: "taskID"},
+		{name: "negative task ID", taskID: -1, labelID: 3, wantInErr: "taskID"},
+		{name: "missing label ID", taskID: 42, labelID: 0, wantInErr: "labelID"},
+		{name: "negative label ID", taskID: 42, labelID: -1, wantInErr: "labelID"},
+		{name: "both invalid reports task ID first", taskID: 0, labelID: 0, wantInErr: "taskID"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+			}))
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			err := client.RemoveTaskLabel(context.Background(), tt.taskID, tt.labelID)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantInErr) {
+				t.Errorf("error = %q, want it to mention %s", err.Error(), tt.wantInErr)
+			}
+			if requests != 0 {
+				t.Errorf("requests = %d, want 0", requests)
+			}
+		})
+	}
+}
+
+func TestRemoveTaskLabel_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	err := client.RemoveTaskLabel(ctx, 42, 3)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", err)
+	}
+}
