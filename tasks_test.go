@@ -253,6 +253,7 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 				Filter:             "done = false && due_date < now+7d",
 				FilterTimeZone:     "Europe/Berlin",
 				FilterIncludeNulls: true,
+				Expand:             []TaskExpand{TaskExpandBuckets, TaskExpandCommentCount},
 				Format:             "markdown",
 				Page:               2,
 				PerPage:            50,
@@ -262,6 +263,7 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 				"filter":               {"done = false && due_date < now+7d"},
 				"filter_timezone":      {"Europe/Berlin"},
 				"filter_include_nulls": {"true"},
+				"expand":               {"buckets", "comment_count"},
 				"format":               {"markdown"},
 				"page":                 {"2"},
 				"per_page":             {"50"},
@@ -289,6 +291,41 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
+			},
+		},
+		{
+			name:  "empty expand sends nothing",
+			query: TaskListQuery{Expand: []TaskExpand{}},
+			want:  url.Values{},
+		},
+		{
+			name:  "single expand",
+			query: TaskListQuery{Expand: []TaskExpand{TaskExpandSubtasks}},
+			want: url.Values{
+				"expand": {"subtasks"},
+			},
+		},
+		{
+			name: "every expand option in order",
+			query: TaskListQuery{Expand: []TaskExpand{
+				TaskExpandSubtasks,
+				TaskExpandBuckets,
+				TaskExpandReactions,
+				TaskExpandComments,
+				TaskExpandCommentCount,
+				TaskExpandTimeEntriesCount,
+				TaskExpandIsUnread,
+			}},
+			want: url.Values{
+				"expand": {
+					"subtasks",
+					"buckets",
+					"reactions",
+					"comments",
+					"comment_count",
+					"time_entries_count",
+					"is_unread",
+				},
 			},
 		},
 	}
@@ -471,7 +508,7 @@ func TestListTasksInProjectStream_IteratesAllPages(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	var got []Task
-	query := TaskListQuery{Filter: "done = false", PerPage: 2, Page: 5}
+	query := TaskListQuery{Filter: "done = false", Expand: []TaskExpand{TaskExpandBuckets}, PerPage: 2, Page: 5}
 	for task, err := range client.ListTasksInProjectStream(context.Background(), 5, query) {
 		if err != nil {
 			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
@@ -490,8 +527,8 @@ func TestListTasksInProjectStream_IteratesAllPages(t *testing.T) {
 
 	// query.Page is ignored: iteration starts at page 1, other parameters are passed through.
 	wantQueries := []url.Values{
-		{"filter": {"done = false"}, "page": {"1"}, "per_page": {"2"}},
-		{"filter": {"done = false"}, "page": {"2"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "expand": {"buckets"}, "page": {"1"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "expand": {"buckets"}, "page": {"2"}, "per_page": {"2"}},
 	}
 	if !reflect.DeepEqual(gotQueries, wantQueries) {
 		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
@@ -749,6 +786,7 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 				Filter:             "done = false && due_date < now+7d",
 				FilterTimeZone:     "Europe/Berlin",
 				FilterIncludeNulls: true,
+				Expand:             []TaskExpand{TaskExpandBuckets, TaskExpandCommentCount},
 				Format:             "markdown",
 				Page:               2,
 				PerPage:            50,
@@ -758,6 +796,7 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 				"filter":               {"done = false && due_date < now+7d"},
 				"filter_timezone":      {"Europe/Berlin"},
 				"filter_include_nulls": {"true"},
+				"expand":               {"buckets", "comment_count"},
 				"format":               {"markdown"},
 				"page":                 {"2"},
 				"per_page":             {"50"},
@@ -785,6 +824,41 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 			want: url.Values{
 				"page":     {"3"},
 				"per_page": {"10"},
+			},
+		},
+		{
+			name:  "empty expand sends nothing",
+			query: TaskListQuery{Expand: []TaskExpand{}},
+			want:  url.Values{},
+		},
+		{
+			name:  "single expand",
+			query: TaskListQuery{Expand: []TaskExpand{TaskExpandSubtasks}},
+			want: url.Values{
+				"expand": {"subtasks"},
+			},
+		},
+		{
+			name: "every expand option in order",
+			query: TaskListQuery{Expand: []TaskExpand{
+				TaskExpandSubtasks,
+				TaskExpandBuckets,
+				TaskExpandReactions,
+				TaskExpandComments,
+				TaskExpandCommentCount,
+				TaskExpandTimeEntriesCount,
+				TaskExpandIsUnread,
+			}},
+			want: url.Values{
+				"expand": {
+					"subtasks",
+					"buckets",
+					"reactions",
+					"comments",
+					"comment_count",
+					"time_entries_count",
+					"is_unread",
+				},
 			},
 		},
 	}
@@ -842,6 +916,61 @@ func TestListTasksInProjectView_DecodesResponse(t *testing.T) {
 		PerPage:    2,
 		Total:      3,
 		TotalPages: 2,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("response = %+v, want %+v", got, want)
+	}
+}
+
+func TestListTasksInProjectView_DecodesExpandedBuckets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [
+				{
+					"id": 1,
+					"title": "Buy milk",
+					"project_id": 5,
+					"bucket_id": 3,
+					"buckets": [
+						{"id": 3, "title": "To Do", "position": 1.5, "project_view_id": 7},
+						{"id": 9, "title": "Backlog", "position": 0, "project_view_id": 8}
+					]
+				},
+				{"id": 2, "title": "Buy eggs", "project_id": 5, "bucket_id": 4, "buckets": []}
+			],
+			"page": 1,
+			"per_page": 2,
+			"total": 2,
+			"total_pages": 1
+		}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{Expand: []TaskExpand{TaskExpandBuckets}})
+	if err != nil {
+		t.Fatalf("ListTasksInProjectView returned error: %v", err)
+	}
+
+	want := &PaginatedTasksResponse{
+		Items: []Task{
+			{
+				ID:        1,
+				Title:     "Buy milk",
+				ProjectID: 5,
+				BucketID:  3,
+				Buckets: []Bucket{
+					{ID: 3, Title: "To Do", Position: 1.5, ProjectViewID: 7},
+					{ID: 9, Title: "Backlog", Position: 0, ProjectViewID: 8},
+				},
+			},
+			{ID: 2, Title: "Buy eggs", ProjectID: 5, BucketID: 4, Buckets: []Bucket{}},
+		},
+		Page:       1,
+		PerPage:    2,
+		Total:      2,
+		TotalPages: 1,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("response = %+v, want %+v", got, want)
@@ -971,7 +1100,7 @@ func TestListTasksInProjectViewStream_IteratesAllPages(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	var got []Task
-	query := TaskListQuery{Filter: "done = false", PerPage: 2, Page: 5}
+	query := TaskListQuery{Filter: "done = false", Expand: []TaskExpand{TaskExpandBuckets}, PerPage: 2, Page: 5}
 	for task, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, query) {
 		if err != nil {
 			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
@@ -990,8 +1119,8 @@ func TestListTasksInProjectViewStream_IteratesAllPages(t *testing.T) {
 
 	// query.Page is ignored: iteration starts at page 1, other parameters are passed through.
 	wantQueries := []url.Values{
-		{"filter": {"done = false"}, "page": {"1"}, "per_page": {"2"}},
-		{"filter": {"done = false"}, "page": {"2"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "expand": {"buckets"}, "page": {"1"}, "per_page": {"2"}},
+		{"filter": {"done = false"}, "expand": {"buckets"}, "page": {"2"}, "per_page": {"2"}},
 	}
 	if !reflect.DeepEqual(gotQueries, wantQueries) {
 		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)

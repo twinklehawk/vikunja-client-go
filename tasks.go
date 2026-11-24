@@ -19,10 +19,13 @@ type Task struct {
 	ProjectID int64 `json:"project_id"`
 	// Description is a description of the task.
 	Description string `json:"description"`
-	// The bucket the task is in. Only populated when the task is accessed via a view with buckets.
-	// To move a task between buckets, the new bucket must be in the same view as the old one.
+	// BucketID is the ID of the bucket the task is in. Only populated when the task is accessed
+	// via a view with buckets. To move a task between buckets, the new bucket must be in the same
+	// view as the old one.
 	BucketID int64 `json:"bucket_id"`
-	// The labels on this task. Read-only here; use the label-task endpoints to add or remove labels.
+	// Buckets are the task's buckets across all views. Only present when requested via the buckets expand option.
+	Buckets []Bucket `json:"buckets"`
+	// Labels are the labels on this task. Read-only here; use the label-task endpoints to add or remove labels.
 	Labels []Label `json:"labels"`
 }
 
@@ -64,6 +67,18 @@ func (c *Client) CreateTask(
 	return &respBody, nil
 }
 
+type TaskExpand string
+
+const (
+	TaskExpandSubtasks         TaskExpand = "subtasks"
+	TaskExpandBuckets          TaskExpand = "buckets"
+	TaskExpandReactions        TaskExpand = "reactions"
+	TaskExpandComments         TaskExpand = "comments"
+	TaskExpandCommentCount     TaskExpand = "comment_count"
+	TaskExpandTimeEntriesCount TaskExpand = "time_entries_count"
+	TaskExpandIsUnread         TaskExpand = "is_unread"
+)
+
 // TaskListQuery holds the query parameters shared by the task list APIs.
 type TaskListQuery struct {
 	// Query is the search query.
@@ -76,6 +91,9 @@ type TaskListQuery struct {
 	FilterTimeZone string
 	// FilterIncludeNulls controls if the filter should match when the task's field is null.
 	FilterIncludeNulls bool
+	// Expand is the extra embedded elements to expand in the tasks.
+	// Some fields, like Buckets, are not expanded unless specified here.
+	Expand []TaskExpand
 	// Format determines how rich-text fields are exchanged. Supported values are "html" and "markdown".
 	Format string
 	// Page is a 1-based page number, default is 1.
@@ -210,6 +228,9 @@ func (p TaskListQuery) addTo(q url.Values) {
 	}
 	if p.Format != "" {
 		q.Add("format", p.Format)
+	}
+	for i := range p.Expand {
+		q.Add("expand", string(p.Expand[i]))
 	}
 }
 
