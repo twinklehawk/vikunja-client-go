@@ -220,6 +220,249 @@ func TestListLabels_CanceledContext(t *testing.T) {
 	}
 }
 
+func TestListLabelsStream_IteratesAllPages(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Bug"},{"id":2,"title":"Feature"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Chore","description":"Housekeeping"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []Label
+	query := LabelListQuery{Query: "b", PerPage: 2, Page: 5}
+	for label, err := range client.ListLabelsStream(context.Background(), query) {
+		if err != nil {
+			t.Fatalf("ListLabelsStream returned error: %v", err)
+		}
+		got = append(got, label)
+	}
+
+	want := []Label{
+		{ID: 1, Title: "Bug"},
+		{ID: 2, Title: "Feature"},
+		{ID: 3, Title: "Chore", Description: "Housekeeping"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("labels = %+v, want %+v", got, want)
+	}
+
+	// query.Page is ignored: iteration starts at page 1, other parameters are passed through.
+	wantQueries := []url.Values{
+		{"q": {"b"}, "page": {"1"}, "per_page": {"2"}},
+		{"q": {"b"}, "page": {"2"}, "per_page": {"2"}},
+	}
+	if !reflect.DeepEqual(gotQueries, wantQueries) {
+		t.Errorf("queries = %v, want %v", gotQueries, wantQueries)
+	}
+}
+
+func TestListLabelsStream_SendsRequest(t *testing.T) {
+	var gotReq *http.Request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotReq = r
+		_, _ = w.Write([]byte(`{"items":[],"total_pages":0}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	for _, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListLabelsStream returned error: %v", err)
+		}
+	}
+
+	if gotReq == nil {
+		t.Fatal("no request was sent")
+	}
+	if gotReq.Method != http.MethodGet {
+		t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+	}
+	if gotReq.URL.Path != "/api/v2/labels" {
+		t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/labels")
+	}
+	if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+		t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+	}
+	if want := (url.Values{"page": {"1"}}); !reflect.DeepEqual(gotReq.URL.Query(), want) {
+		t.Errorf("query = %v, want %v", gotReq.URL.Query(), want)
+	}
+}
+
+func TestListLabelsStream_IsLazy(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"items":[],"total_pages":0}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_ = client.ListLabelsStream(context.Background(), LabelListQuery{})
+
+	if requests != 0 {
+		t.Errorf("requests = %d, want 0 before iterating", requests)
+	}
+}
+
+func TestListLabelsStream_StopsOnLastPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Bug"}],"page":1,"total_pages":1}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListLabelsStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("labels = %d, want 1", count)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListLabelsStream_StopsOnBreak(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Bug"},{"id":2,"title":"Feature"}],"page":1,"total_pages":2}`,
+		`{"items":[{"id":3,"title":"Chore"}],"page":2,"total_pages":2}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	var got []int64
+	for label, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListLabelsStream returned error: %v", err)
+		}
+		got = append(got, label.ID)
+		if label.ID == 1 {
+			break
+		}
+	}
+
+	if want := []int64{1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("label IDs = %v, want %v", got, want)
+	}
+	if len(gotQueries) != 1 {
+		t.Errorf("requests = %d, want 1", len(gotQueries))
+	}
+}
+
+func TestListLabelsStream_StopsOnEmptyPage(t *testing.T) {
+	var gotQueries []url.Values
+	server := pagedServer(t, []string{
+		`{"items":[{"id":1,"title":"Bug"}],"total_pages":5}`,
+		`{"items":[],"total_pages":5}`,
+	}, &gotQueries)
+
+	client := newTestClient(server.URL)
+	count := 0
+	for _, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err != nil {
+			t.Fatalf("ListLabelsStream returned error: %v", err)
+		}
+		count++
+	}
+
+	if count != 1 {
+		t.Errorf("labels = %d, want 1", count)
+	}
+	if len(gotQueries) != 2 {
+		t.Errorf("requests = %d, want 2", len(gotQueries))
+	}
+}
+
+func TestListLabelsStream_YieldsError(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}],"page":1,"total_pages":3}`))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	var got []Label
+	var gotErrs []error
+	for label, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err != nil {
+			if !reflect.DeepEqual(label, Label{}) {
+				t.Errorf("label yielded with error = %+v, want zero Label", label)
+			}
+			gotErrs = append(gotErrs, err)
+			continue
+		}
+		got = append(got, label)
+	}
+
+	if want := []Label{{ID: 1, Title: "Bug"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("labels = %+v, want %+v", got, want)
+	}
+	if len(gotErrs) != 1 {
+		t.Fatalf("errors = %v, want exactly 1", gotErrs)
+	}
+	var apiErr *APIError
+	if !errors.As(gotErrs[0], &apiErr) || apiErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("error = %v, want *APIError with status 500", gotErrs[0])
+	}
+	// Iteration stops after the error; page 3 is never requested.
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2", requests)
+	}
+}
+
+func TestListLabelsStream_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	var gotErrs []error
+	for label, err := range client.ListLabelsStream(context.Background(), LabelListQuery{}) {
+		if err == nil {
+			t.Errorf("unexpected label %+v without error", label)
+			continue
+		}
+		gotErrs = append(gotErrs, err)
+	}
+
+	if len(gotErrs) != 1 {
+		t.Errorf("errors = %v, want exactly 1", gotErrs)
+	}
+}
+
+func TestListLabelsStream_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}],"total_pages":1}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	var gotErrs []error
+	for label, err := range client.ListLabelsStream(ctx, LabelListQuery{}) {
+		if err == nil {
+			t.Errorf("unexpected label %+v without error", label)
+			continue
+		}
+		gotErrs = append(gotErrs, err)
+	}
+
+	if len(gotErrs) != 1 {
+		t.Fatalf("errors = %v, want exactly 1", gotErrs)
+	}
+	if !errors.Is(gotErrs[0], context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", gotErrs[0])
+	}
+}
+
 func TestFindLabelByTitle_SendsRequest(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -235,16 +478,24 @@ func TestFindLabelByTitle_SendsRequest(t *testing.T) {
 			server := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					gotReq = r
+					// Echo the searched title back so it is an exact match.
+					body, _ := json.Marshal(map[string]any{
+						"items":       []Label{{ID: 1, Title: r.URL.Query().Get("q")}},
+						"total_pages": 1,
+					})
 					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}]}`))
+					_, _ = w.Write(body)
 				}),
 			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			_, err := client.FindLabelByTitle(context.Background(), tt.title)
+			got, err := client.FindLabelByTitle(context.Background(), tt.title)
 			if err != nil {
 				t.Fatalf("FindLabelByTitle returned error: %v", err)
+			}
+			if got.Title != tt.title {
+				t.Errorf("title = %q, want %q", got.Title, tt.title)
 			}
 
 			if gotReq.Method != http.MethodGet {
@@ -256,7 +507,7 @@ func TestFindLabelByTitle_SendsRequest(t *testing.T) {
 			if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
 				t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
 			}
-			wantQuery := url.Values{"q": {tt.title}}
+			wantQuery := url.Values{"q": {tt.title}, "page": {"1"}}
 			if got := gotReq.URL.Query(); !reflect.DeepEqual(got, wantQuery) {
 				t.Errorf("query = %v, want %v", got, wantQuery)
 			}
@@ -264,44 +515,137 @@ func TestFindLabelByTitle_SendsRequest(t *testing.T) {
 	}
 }
 
-func TestFindLabelByTitle_ReturnsSingleMatch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"items": [{"id": 7, "title": "Bug", "description": "Something is broken"}],
-			"page": 1,
-			"per_page": 50,
-			"total": 1,
-			"total_pages": 1
-		}`))
-	}))
-	defer server.Close()
-
-	client := newTestClient(server.URL)
-	got, err := client.FindLabelByTitle(context.Background(), "Bug")
-	if err != nil {
-		t.Fatalf("FindLabelByTitle returned error: %v", err)
+func TestFindLabelByTitle_ReturnsExactMatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		pages        []string
+		want         *Label
+		wantRequests int
+	}{
+		{
+			name:         "single exact match",
+			pages:        []string{`{"items":[{"id":7,"title":"Bug"}],"total_pages":1}`},
+			want:         &Label{ID: 7, Title: "Bug"},
+			wantRequests: 1,
+		},
+		{
+			name: "skips partial matches",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Bugfix"},{"id":2,"title":"Bug"}],"total_pages":1}`,
+			},
+			want:         &Label{ID: 2, Title: "Bug"},
+			wantRequests: 1,
+		},
+		{
+			name: "skips different case",
+			pages: []string{
+				`{"items":[{"id":1,"title":"bug"},{"id":2,"title":"Bug"}],"total_pages":1}`,
+			},
+			want:         &Label{ID: 2, Title: "Bug"},
+			wantRequests: 1,
+		},
+		{
+			name: "first of duplicate titles",
+			pages: []string{
+				`{"items":[{"id":3,"title":"Bug"},{"id":4,"title":"Bug"}],"total_pages":1}`,
+			},
+			want:         &Label{ID: 3, Title: "Bug"},
+			wantRequests: 1,
+		},
+		{
+			name: "match on a later page",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Bugfix"},{"id":2,"title":"Feature"}],"total_pages":2}`,
+				`{"items":[{"id":3,"title":"Bug"}],"total_pages":2}`,
+			},
+			want:         &Label{ID: 3, Title: "Bug"},
+			wantRequests: 2,
+		},
+		{
+			name: "stops fetching after a match",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Bug"}],"total_pages":3}`,
+				`{"items":[{"id":2,"title":"Feature"}],"total_pages":3}`,
+				`{"items":[{"id":3,"title":"Bugfix"}],"total_pages":3}`,
+			},
+			want:         &Label{ID: 1, Title: "Bug"},
+			wantRequests: 1,
+		},
 	}
 
-	want := &Label{ID: 7, Title: "Bug", Description: "Something is broken"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("label = %+v, want %+v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQueries []url.Values
+			server := pagedServer(t, tt.pages, &gotQueries)
+
+			client := newTestClient(server.URL)
+			got, err := client.FindLabelByTitle(context.Background(), "Bug")
+			if err != nil {
+				t.Fatalf("FindLabelByTitle returned error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("label = %+v, want %+v", got, tt.want)
+			}
+			if len(gotQueries) != tt.wantRequests {
+				t.Errorf("requests = %d, want %d", len(gotQueries), tt.wantRequests)
+			}
+		})
 	}
 }
 
-func TestFindLabelByTitle_WrongMatchCount(t *testing.T) {
+func TestFindLabelByTitle_NoMatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		pages        []string
+		wantRequests int
+	}{
+		{name: "no items", pages: []string{`{"items":[]}`}, wantRequests: 1},
+		{name: "null items", pages: []string{`{"items":null}`}, wantRequests: 1},
+		{name: "missing items", pages: []string{`{}`}, wantRequests: 1},
+		{
+			name: "only partial matches across all pages",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Bugfix"}],"total_pages":2}`,
+				`{"items":[{"id":2,"title":"bug"}],"total_pages":2}`,
+			},
+			wantRequests: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQueries []url.Values
+			server := pagedServer(t, tt.pages, &gotQueries)
+
+			client := newTestClient(server.URL)
+			got, err := client.FindLabelByTitle(context.Background(), "Bug")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("label = %+v, want nil", got)
+			}
+			if want := "no label found matching title 'Bug'"; err.Error() != want {
+				t.Errorf("error = %q, want %q", err.Error(), want)
+			}
+			if len(gotQueries) != tt.wantRequests {
+				t.Errorf("requests = %d, want %d", len(gotQueries), tt.wantRequests)
+			}
+		})
+	}
+}
+
+func TestFindLabelByTitle_APIError(t *testing.T) {
 	tests := []struct {
 		name      string
-		body      string
-		wantInErr string
+		failPage  string
+		firstPage string
 	}{
-		{name: "no items", body: `{"items":[]}`, wantInErr: "found 0"},
-		{name: "null items", body: `{"items":null}`, wantInErr: "found 0"},
-		{name: "missing items", body: `{}`, wantInErr: "found 0"},
+		{name: "first page fails", failPage: "1"},
 		{
-			name:      "multiple matches",
-			body:      `{"items":[{"id":1,"title":"Bug"},{"id":2,"title":"Bugfix"}]}`,
-			wantInErr: "found 2",
+			name:      "later page fails",
+			failPage:  "2",
+			firstPage: `{"items":[{"id":1,"title":"Bugfix"}],"total_pages":2}`,
 		},
 	}
 
@@ -309,8 +653,12 @@ func TestFindLabelByTitle_WrongMatchCount(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(
 				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(tt.body))
+					if r.URL.Query().Get("page") != tt.failPage {
+						_, _ = w.Write([]byte(tt.firstPage))
+						return
+					}
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"message":"invalid token"}`))
 				}),
 			)
 			defer server.Close()
@@ -323,38 +671,15 @@ func TestFindLabelByTitle_WrongMatchCount(t *testing.T) {
 			if got != nil {
 				t.Errorf("label = %+v, want nil", got)
 			}
-			if !strings.Contains(err.Error(), tt.wantInErr) {
-				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantInErr)
+
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error = %v (%T), want *APIError", err, err)
 			}
-			if !strings.Contains(err.Error(), "Bug") {
-				t.Errorf("error = %q, want it to mention the title", err.Error())
+			if apiErr.StatusCode != http.StatusUnauthorized {
+				t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
 			}
 		})
-	}
-}
-
-func TestFindLabelByTitle_APIError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"message":"invalid token"}`))
-	}))
-	defer server.Close()
-
-	client := newTestClient(server.URL)
-	got, err := client.FindLabelByTitle(context.Background(), "Bug")
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if got != nil {
-		t.Errorf("label = %+v, want nil", got)
-	}
-
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("error = %v (%T), want *APIError", err, err)
-	}
-	if apiErr.StatusCode != http.StatusUnauthorized {
-		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
 	}
 }
 
@@ -391,7 +716,7 @@ func TestFindLabelByTitle_RequestError(t *testing.T) {
 
 func TestFindLabelByTitle_CanceledContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}],"total_pages":1}`))
 	}))
 	defer server.Close()
 
@@ -399,9 +724,12 @@ func TestFindLabelByTitle_CanceledContext(t *testing.T) {
 	cancel()
 
 	client := newTestClient(server.URL)
-	_, err := client.FindLabelByTitle(ctx, "Bug")
+	got, err := client.FindLabelByTitle(ctx, "Bug")
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context.Canceled", err)
+	}
+	if got != nil {
+		t.Errorf("label = %+v, want nil", got)
 	}
 }
 
