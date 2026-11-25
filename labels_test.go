@@ -220,6 +220,191 @@ func TestListLabels_CanceledContext(t *testing.T) {
 	}
 }
 
+func TestFindLabelByTitle_SendsRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+	}{
+		{name: "simple title", title: "Bug"},
+		{name: "special characters", title: "a&b=c?d e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReq *http.Request
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotReq = r
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}]}`))
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			_, err := client.FindLabelByTitle(context.Background(), tt.title)
+			if err != nil {
+				t.Fatalf("FindLabelByTitle returned error: %v", err)
+			}
+
+			if gotReq.Method != http.MethodGet {
+				t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+			}
+			if gotReq.URL.Path != "/api/v2/labels" {
+				t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/labels")
+			}
+			if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+				t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+			}
+			wantQuery := url.Values{"q": {tt.title}}
+			if got := gotReq.URL.Query(); !reflect.DeepEqual(got, wantQuery) {
+				t.Errorf("query = %v, want %v", got, wantQuery)
+			}
+		})
+	}
+}
+
+func TestFindLabelByTitle_ReturnsSingleMatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"items": [{"id": 7, "title": "Bug", "description": "Something is broken"}],
+			"page": 1,
+			"per_page": 50,
+			"total": 1,
+			"total_pages": 1
+		}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindLabelByTitle(context.Background(), "Bug")
+	if err != nil {
+		t.Fatalf("FindLabelByTitle returned error: %v", err)
+	}
+
+	want := &Label{ID: 7, Title: "Bug", Description: "Something is broken"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("label = %+v, want %+v", got, want)
+	}
+}
+
+func TestFindLabelByTitle_WrongMatchCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		wantInErr string
+	}{
+		{name: "no items", body: `{"items":[]}`, wantInErr: "found 0"},
+		{name: "null items", body: `{"items":null}`, wantInErr: "found 0"},
+		{name: "missing items", body: `{}`, wantInErr: "found 0"},
+		{
+			name:      "multiple matches",
+			body:      `{"items":[{"id":1,"title":"Bug"},{"id":2,"title":"Bugfix"}]}`,
+			wantInErr: "found 2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindLabelByTitle(context.Background(), "Bug")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("label = %+v, want nil", got)
+			}
+			if !strings.Contains(err.Error(), tt.wantInErr) {
+				t.Errorf("error = %q, want it to contain %q", err.Error(), tt.wantInErr)
+			}
+			if !strings.Contains(err.Error(), "Bug") {
+				t.Errorf("error = %q, want it to mention the title", err.Error())
+			}
+		})
+	}
+}
+
+func TestFindLabelByTitle_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"message":"invalid token"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindLabelByTitle(context.Background(), "Bug")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("label = %+v, want nil", got)
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
+	}
+}
+
+func TestFindLabelByTitle_InvalidResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindLabelByTitle(context.Background(), "Bug")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("label = %+v, want nil", got)
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Errorf("error = %v (%T), want wrapped *json.SyntaxError", err, err)
+	}
+}
+
+func TestFindLabelByTitle_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	got, err := client.FindLabelByTitle(context.Background(), "Bug")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("label = %+v, want nil", got)
+	}
+}
+
+func TestFindLabelByTitle_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Bug"}]}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	_, err := client.FindLabelByTitle(ctx, "Bug")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", err)
+	}
+}
+
 func TestAddTaskLabel_SendsRequest(t *testing.T) {
 	var gotReq *http.Request
 	var gotBody map[string]any

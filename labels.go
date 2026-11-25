@@ -76,6 +76,18 @@ func (c *Client) ListLabels(
 	return &respBody, nil
 }
 
+// FindLabelByTitle finds a single label by its title, returning an error if no labels or multiple labels match.
+func (c *Client) FindLabelByTitle(ctx context.Context, title string) (*Label, error) {
+	labels, err := c.ListLabels(ctx, LabelListQuery{Query: title})
+	if err != nil {
+		return nil, err
+	}
+	if len(labels.Items) != 1 {
+		return nil, fmt.Errorf("expected one label matching %s, found %d", title, len(labels.Items))
+	}
+	return &labels.Items[0], nil
+}
+
 // AddTaskLabelRequest specifies the parameters for the AddTaskLabel API.
 type AddTaskLabelRequest struct {
 	// LabelID is the ID of the label to associate to the task.
