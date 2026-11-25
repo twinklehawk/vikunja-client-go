@@ -85,10 +85,12 @@ func TestListProjectViews_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -216,13 +218,19 @@ func TestListProjectViews_InvalidProjectID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListProjectViews(context.Background(), tt.projectID, ProjectViewListQuery{})
+			resp, err := client.ListProjectViews(
+				context.Background(),
+				tt.projectID,
+				ProjectViewListQuery{},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

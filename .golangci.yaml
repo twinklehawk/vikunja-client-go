@@ -4,5 +4,6 @@ linters:
 formatters:
   enable:
     - gofmt
+    - golines
 issues:
   fix: false

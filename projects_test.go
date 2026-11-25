@@ -112,10 +112,12 @@ func TestListProjects_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -351,7 +353,12 @@ func TestListProjectViewBuckets_SendsRequest(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	_, err := client.ListProjectViewBuckets(context.Background(), 5, 7, ProjectViewBucketListQuery{})
+	_, err := client.ListProjectViewBuckets(
+		context.Background(),
+		5,
+		7,
+		ProjectViewBucketListQuery{},
+	)
 	if err != nil {
 		t.Fatalf("ListProjectViewBuckets returned error: %v", err)
 	}
@@ -408,10 +415,12 @@ func TestListProjectViewBuckets_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -444,7 +453,12 @@ func TestListProjectViewBuckets_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.ListProjectViewBuckets(context.Background(), 5, 7, ProjectViewBucketListQuery{})
+	got, err := client.ListProjectViewBuckets(
+		context.Background(),
+		5,
+		7,
+		ProjectViewBucketListQuery{},
+	)
 	if err != nil {
 		t.Fatalf("ListProjectViewBuckets returned error: %v", err)
 	}
@@ -472,7 +486,12 @@ func TestListProjectViewBuckets_APIError(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjectViewBuckets(context.Background(), 5, 7, ProjectViewBucketListQuery{})
+	resp, err := client.ListProjectViewBuckets(
+		context.Background(),
+		5,
+		7,
+		ProjectViewBucketListQuery{},
+	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -499,7 +518,12 @@ func TestListProjectViewBuckets_InvalidResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	resp, err := client.ListProjectViewBuckets(context.Background(), 5, 7, ProjectViewBucketListQuery{})
+	resp, err := client.ListProjectViewBuckets(
+		context.Background(),
+		5,
+		7,
+		ProjectViewBucketListQuery{},
+	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -514,7 +538,12 @@ func TestListProjectViewBuckets_InvalidResponse(t *testing.T) {
 
 func TestListProjectViewBuckets_RequestError(t *testing.T) {
 	client := newTestClient("http://[::1")
-	resp, err := client.ListProjectViewBuckets(context.Background(), 5, 7, ProjectViewBucketListQuery{})
+	resp, err := client.ListProjectViewBuckets(
+		context.Background(),
+		5,
+		7,
+		ProjectViewBucketListQuery{},
+	)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -539,13 +568,20 @@ func TestListProjectViewBuckets_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListProjectViewBuckets(context.Background(), tt.projectID, tt.projectViewID, ProjectViewBucketListQuery{})
+			resp, err := client.ListProjectViewBuckets(
+				context.Background(),
+				tt.projectID,
+				tt.projectViewID,
+				ProjectViewBucketListQuery{},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}

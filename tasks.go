@@ -50,7 +50,10 @@ func (c *Client) CreateTask(
 	task Task,
 ) (*Task, error) {
 	if task.ProjectID <= 0 {
-		return nil, fmt.Errorf("task.ProjectID must be a positive project ID, got %d", task.ProjectID)
+		return nil, fmt.Errorf(
+			"task.ProjectID must be a positive project ID, got %d",
+			task.ProjectID,
+		)
 	}
 
 	path := fmt.Sprintf("/api/v2/projects/%d/tasks", task.ProjectID)
@@ -285,7 +288,10 @@ func (c *Client) UpdateTask(
 		return nil, fmt.Errorf("request.BucketID must be a positive ID, got %d", *request.BucketID)
 	}
 	if request.ProjectID != nil && *request.ProjectID <= 0 {
-		return nil, fmt.Errorf("request.ProjectID must be a positive ID, got %d", *request.ProjectID)
+		return nil, fmt.Errorf(
+			"request.ProjectID must be a positive ID, got %d",
+			*request.ProjectID,
+		)
 	}
 
 	path := fmt.Sprintf("/api/v2/tasks/%d", taskID)

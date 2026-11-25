@@ -97,8 +97,18 @@ func TestNewRequest_Errors(t *testing.T) {
 		method     string
 		wantPrefix string
 	}{
-		{name: "invalid base URL", baseURL: "http://[::1", method: http.MethodGet, wantPrefix: "building URL: "},
-		{name: "invalid method", baseURL: "https://vikunja.example", method: "BAD METHOD", wantPrefix: "creating request: "},
+		{
+			name:       "invalid base URL",
+			baseURL:    "http://[::1",
+			method:     http.MethodGet,
+			wantPrefix: "building URL: ",
+		},
+		{
+			name:       "invalid method",
+			baseURL:    "https://vikunja.example",
+			method:     "BAD METHOD",
+			wantPrefix: "creating request: ",
+		},
 	}
 
 	for _, tt := range tests {
@@ -187,7 +197,12 @@ func TestNewRequestWithBody_SentToServer(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	req, err := client.newRequestWithBody(context.Background(), http.MethodPut, "/api/v2/projects", map[string]string{"title": "Inbox"})
+	req, err := client.newRequestWithBody(
+		context.Background(),
+		http.MethodPut,
+		"/api/v2/projects",
+		map[string]string{"title": "Inbox"},
+	)
 	if err != nil {
 		t.Fatalf("newRequestWithBody returned error: %v", err)
 	}
@@ -241,7 +256,12 @@ func TestNewRequestWithBody_Errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := newTestClient(tt.baseURL)
 
-			req, err := client.newRequestWithBody(context.Background(), tt.method, "/api/v2/tasks", tt.reqBody)
+			req, err := client.newRequestWithBody(
+				context.Background(),
+				tt.method,
+				"/api/v2/tasks",
+				tt.reqBody,
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -265,17 +285,29 @@ func TestDo_AcceptsAny2xx(t *testing.T) {
 		body   string
 		want   map[string]string
 	}{
-		{name: "200 with body", status: http.StatusOK, body: `{"a":"b"}`, want: map[string]string{"a": "b"}},
-		{name: "201 with body", status: http.StatusCreated, body: `{"a":"b"}`, want: map[string]string{"a": "b"}},
+		{
+			name:   "200 with body",
+			status: http.StatusOK,
+			body:   `{"a":"b"}`,
+			want:   map[string]string{"a": "b"},
+		},
+		{
+			name:   "201 with body",
+			status: http.StatusCreated,
+			body:   `{"a":"b"}`,
+			want:   map[string]string{"a": "b"},
+		},
 		{name: "204 without body", status: http.StatusNoContent, body: "", want: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.body))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tt.status)
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -341,9 +373,11 @@ func TestNewClient_WithUserAgent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Get("User-Agent")
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					got = r.Header.Get("User-Agent")
+				}),
+			)
 			defer server.Close()
 
 			opts := append(tt.opts, WithBaseURL(server.URL))
@@ -360,10 +394,16 @@ func TestNewClient_WithUserAgent(t *testing.T) {
 
 func TestNewClient_WithHTTPClient(t *testing.T) {
 	custom := &http.Client{}
-	if got := NewClient(WithBaseURL("http://vikunja.invalid"), WithHTTPClient(custom)).httpClient; got != custom {
+	if got := NewClient(
+		WithBaseURL("http://vikunja.invalid"),
+		WithHTTPClient(custom),
+	).httpClient; got != custom {
 		t.Errorf("httpClient = %p, want %p", got, custom)
 	}
-	if got := NewClient(WithBaseURL("http://vikunja.invalid"), WithHTTPClient(nil)).httpClient; got == nil {
+	if got := NewClient(
+		WithBaseURL("http://vikunja.invalid"),
+		WithHTTPClient(nil),
+	).httpClient; got == nil {
 		t.Error("httpClient = nil, want default client")
 	}
 }
@@ -381,9 +421,11 @@ func TestNewClient_WithApiToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Get("Authorization")
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					got = r.Header.Get("Authorization")
+				}),
+			)
 			defer server.Close()
 
 			opts := append(tt.opts, WithBaseURL(server.URL))

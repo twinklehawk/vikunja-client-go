@@ -43,7 +43,10 @@ type LabelListQuery struct {
 }
 
 // ListLabels returns the labels visible to the authenticated user — their own plus any used on tasks they can access.
-func (c *Client) ListLabels(ctx context.Context, query LabelListQuery) (*PaginatedLabelResponse, error) {
+func (c *Client) ListLabels(
+	ctx context.Context,
+	query LabelListQuery,
+) (*PaginatedLabelResponse, error) {
 	req, err := c.newRequest(
 		ctx,
 		http.MethodGet,
