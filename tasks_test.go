@@ -167,13 +167,18 @@ func TestCreateTask_InvalidProjectID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			task, err := client.CreateTask(context.Background(), Task{Title: "Buy milk", ProjectID: tt.projectID})
+			task, err := client.CreateTask(
+				context.Background(),
+				Task{Title: "Buy milk", ProjectID: tt.projectID},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -333,10 +338,12 @@ func TestListTasksInProject_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -460,13 +467,19 @@ func TestListTasksInProject_InvalidProjectID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListTasksInProject(context.Background(), tt.projectID, TaskListQuery{})
+			resp, err := client.ListTasksInProject(
+				context.Background(),
+				tt.projectID,
+				TaskListQuery{},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -508,7 +521,12 @@ func TestListTasksInProjectStream_IteratesAllPages(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	var got []Task
-	query := TaskListQuery{Filter: "done = false", Expand: []TaskExpand{TaskExpandBuckets}, PerPage: 2, Page: 5}
+	query := TaskListQuery{
+		Filter:  "done = false",
+		Expand:  []TaskExpand{TaskExpandBuckets},
+		PerPage: 2,
+		Page:    5,
+	}
 	for task, err := range client.ListTasksInProjectStream(context.Background(), 5, query) {
 		if err != nil {
 			t.Fatalf("ListTasksInProjectStream returned error: %v", err)
@@ -640,7 +658,9 @@ func TestListTasksInProjectStream_YieldsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.URL.Query().Get("page") == "1" {
-			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`))
+			_, _ = w.Write(
+				[]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`),
+			)
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
@@ -689,9 +709,11 @@ func TestListTasksInProjectStream_InvalidProjectID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -866,10 +888,12 @@ func TestListTasksInProjectView_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -948,7 +972,12 @@ func TestListTasksInProjectView_DecodesExpandedBuckets(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.ListTasksInProjectView(context.Background(), 5, 7, TaskListQuery{Expand: []TaskExpand{TaskExpandBuckets}})
+	got, err := client.ListTasksInProjectView(
+		context.Background(),
+		5,
+		7,
+		TaskListQuery{Expand: []TaskExpand{TaskExpandBuckets}},
+	)
 	if err != nil {
 		t.Fatalf("ListTasksInProjectView returned error: %v", err)
 	}
@@ -1052,13 +1081,20 @@ func TestListTasksInProjectView_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			resp, err := client.ListTasksInProjectView(context.Background(), tt.projectID, tt.viewID, TaskListQuery{})
+			resp, err := client.ListTasksInProjectView(
+				context.Background(),
+				tt.projectID,
+				tt.viewID,
+				TaskListQuery{},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -1100,7 +1136,12 @@ func TestListTasksInProjectViewStream_IteratesAllPages(t *testing.T) {
 
 	client := newTestClient(server.URL)
 	var got []Task
-	query := TaskListQuery{Filter: "done = false", Expand: []TaskExpand{TaskExpandBuckets}, PerPage: 2, Page: 5}
+	query := TaskListQuery{
+		Filter:  "done = false",
+		Expand:  []TaskExpand{TaskExpandBuckets},
+		PerPage: 2,
+		Page:    5,
+	}
 	for task, err := range client.ListTasksInProjectViewStream(context.Background(), 5, 7, query) {
 		if err != nil {
 			t.Fatalf("ListTasksInProjectViewStream returned error: %v", err)
@@ -1232,7 +1273,9 @@ func TestListTasksInProjectViewStream_YieldsError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.URL.Query().Get("page") == "1" {
-			_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`))
+			_, _ = w.Write(
+				[]byte(`{"items":[{"id":1,"title":"Buy milk"}],"page":1,"total_pages":3}`),
+			)
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1285,9 +1328,11 @@ func TestListTasksInProjectViewStream_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -1442,12 +1487,14 @@ func TestUpdateTask_RequestBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotBody map[string]any
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-					t.Errorf("failed to decode request body: %v", err)
-				}
-				_, _ = w.Write([]byte(`{"id":42}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+						t.Errorf("failed to decode request body: %v", err)
+					}
+					_, _ = w.Write([]byte(`{"id":42}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -1478,7 +1525,11 @@ func TestUpdateTask_DecodesResponse(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(server.URL)
-	got, err := client.UpdateTask(context.Background(), 42, UpdateTaskRequest{BucketID: new(int64(3))})
+	got, err := client.UpdateTask(
+		context.Background(),
+		42,
+		UpdateTaskRequest{BucketID: new(int64(3))},
+	)
 	if err != nil {
 		t.Fatalf("UpdateTask returned error: %v", err)
 	}
@@ -1562,16 +1613,50 @@ func TestUpdateTask_InvalidIDs(t *testing.T) {
 		request   UpdateTaskRequest
 		wantInErr string
 	}{
-		{name: "missing task ID", taskID: 0, request: UpdateTaskRequest{Done: new(true)}, wantInErr: "taskID"},
-		{name: "negative task ID", taskID: -1, request: UpdateTaskRequest{Done: new(true)}, wantInErr: "taskID"},
-		{name: "zero bucket ID", taskID: 42, request: UpdateTaskRequest{BucketID: new(int64(0))}, wantInErr: "BucketID"},
-		{name: "negative bucket ID", taskID: 42, request: UpdateTaskRequest{BucketID: new(int64(-1))}, wantInErr: "BucketID"},
-		{name: "zero project ID", taskID: 42, request: UpdateTaskRequest{ProjectID: new(int64(0))}, wantInErr: "ProjectID"},
-		{name: "negative project ID", taskID: 42, request: UpdateTaskRequest{ProjectID: new(int64(-1))}, wantInErr: "ProjectID"},
 		{
-			name:      "invalid project ID alongside valid fields",
+			name:      "missing task ID",
+			taskID:    0,
+			request:   UpdateTaskRequest{Done: new(true)},
+			wantInErr: "taskID",
+		},
+		{
+			name:      "negative task ID",
+			taskID:    -1,
+			request:   UpdateTaskRequest{Done: new(true)},
+			wantInErr: "taskID",
+		},
+		{
+			name:      "zero bucket ID",
 			taskID:    42,
-			request:   UpdateTaskRequest{BucketID: new(int64(3)), Done: new(true), ProjectID: new(int64(0))},
+			request:   UpdateTaskRequest{BucketID: new(int64(0))},
+			wantInErr: "BucketID",
+		},
+		{
+			name:      "negative bucket ID",
+			taskID:    42,
+			request:   UpdateTaskRequest{BucketID: new(int64(-1))},
+			wantInErr: "BucketID",
+		},
+		{
+			name:      "zero project ID",
+			taskID:    42,
+			request:   UpdateTaskRequest{ProjectID: new(int64(0))},
+			wantInErr: "ProjectID",
+		},
+		{
+			name:      "negative project ID",
+			taskID:    42,
+			request:   UpdateTaskRequest{ProjectID: new(int64(-1))},
+			wantInErr: "ProjectID",
+		},
+		{
+			name:   "invalid project ID alongside valid fields",
+			taskID: 42,
+			request: UpdateTaskRequest{
+				BucketID:  new(int64(3)),
+				Done:      new(true),
+				ProjectID: new(int64(0)),
+			},
 			wantInErr: "ProjectID",
 		},
 	}
@@ -1579,9 +1664,11 @@ func TestUpdateTask_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)

@@ -87,10 +87,12 @@ func TestListLabels_QueryParameters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotQuery url.Values
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.Query()
-				_, _ = w.Write([]byte(`{"items":[]}`))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotQuery = r.URL.Query()
+					_, _ = w.Write([]byte(`{"items":[]}`))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -278,10 +280,12 @@ func TestAddTaskLabel_IgnoresResponseBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusCreated)
-				_, _ = w.Write([]byte(tt.body))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusCreated)
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -314,7 +318,11 @@ func TestAddTaskLabel_APIError(t *testing.T) {
 		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusConflict)
 	}
 	if apiErr.Message != `{"message":"label already exists on task"}` {
-		t.Errorf("Message = %q, want %q", apiErr.Message, `{"message":"label already exists on task"}`)
+		t.Errorf(
+			"Message = %q, want %q",
+			apiErr.Message,
+			`{"message":"label already exists on task"}`,
+		)
 	}
 }
 
@@ -342,13 +350,19 @@ func TestAddTaskLabel_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
-			err := client.AddTaskLabel(context.Background(), tt.taskID, AddTaskLabelRequest{LabelID: tt.labelID})
+			err := client.AddTaskLabel(
+				context.Background(),
+				tt.taskID,
+				AddTaskLabelRequest{LabelID: tt.labelID},
+			)
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -425,10 +439,12 @@ func TestRemoveTaskLabel_IgnoresResponseBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.status)
-				_, _ = w.Write([]byte(tt.body))
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tt.status)
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
@@ -461,7 +477,11 @@ func TestRemoveTaskLabel_APIError(t *testing.T) {
 		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusNotFound)
 	}
 	if apiErr.Message != `{"message":"label does not exist on task"}` {
-		t.Errorf("Message = %q, want %q", apiErr.Message, `{"message":"label does not exist on task"}`)
+		t.Errorf(
+			"Message = %q, want %q",
+			apiErr.Message,
+			`{"message":"label does not exist on task"}`,
+		)
 	}
 }
 
@@ -490,9 +510,11 @@ func TestRemoveTaskLabel_InvalidIDs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests++
-			}))
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
 			defer server.Close()
 
 			client := newTestClient(server.URL)
