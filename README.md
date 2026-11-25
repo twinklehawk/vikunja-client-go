@@ -8,7 +8,7 @@ Vikunja API client in Go
 `golangci-lint run`
 
 ## Formatting
-`go fmt ./...`
+`golangci-lint fmt`
 
 ## Testing
 `go test -cover ./...`
