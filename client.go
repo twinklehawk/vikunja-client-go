@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -26,18 +27,29 @@ import (
 // DefaultUserAgent is the User-Agent header sent with requests unless overridden with [WithUserAgent].
 const DefaultUserAgent = "vikunja-client-go"
 
-// maxErrorBodySize is the maximum number of bytes of an error response body read into an [APIError].
-const maxErrorBodySize = 64 << 10
+// DefaultMaxResponseBodySize is the maximum number of bytes of a successful response body read
+// unless overridden with [WithMaxResponseBodySize].
+const DefaultMaxResponseBodySize = 16 << 20
+
+// DefaultMaxErrorBodySize is the maximum number of bytes of an error response body read into an
+// [APIError] unless overridden with [WithMaxErrorBodySize].
+const DefaultMaxErrorBodySize = 64 << 10
+
+// ErrResponseTooLarge is returned when a successful response body exceeds the maximum size set
+// with [WithMaxResponseBodySize].
+var ErrResponseTooLarge = errors.New("response body too large")
 
 // DefaultBaseURL is the base URL used unless overridden with [WithBaseURL].
 const DefaultBaseURL = "https://vikunja.cloud"
 
 // Client is a Vikunja API client.
 type Client struct {
-	httpClient *http.Client
-	baseURL    string
-	userAgent  string
-	apiToken   string
+	httpClient          *http.Client
+	baseURL             string
+	userAgent           string
+	apiToken            string
+	maxResponseBodySize int64
+	maxErrorBodySize    int64
 }
 
 // Option configures a [Client].
@@ -74,6 +86,30 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
+// WithMaxResponseBodySize sets the maximum number of bytes of a successful response body read.
+// A response body larger than this causes the request to fail with [ErrResponseTooLarge].
+// Values less than or equal to zero are ignored.
+// By default, [DefaultMaxResponseBodySize] is used.
+func WithMaxResponseBodySize(size int64) Option {
+	return func(c *Client) {
+		if size > 0 {
+			c.maxResponseBodySize = size
+		}
+	}
+}
+
+// WithMaxErrorBodySize sets the maximum number of bytes of an error response body read into an
+// [APIError]. Unlike [WithMaxResponseBodySize], a larger error body is silently truncated rather
+// than causing a separate error. Values less than or equal to zero are ignored.
+// By default, [DefaultMaxErrorBodySize] is used.
+func WithMaxErrorBodySize(size int64) Option {
+	return func(c *Client) {
+		if size > 0 {
+			c.maxErrorBodySize = size
+		}
+	}
+}
+
 // APIError represents an error when calling a Vikunja API.
 type APIError struct {
 	StatusCode int
@@ -89,9 +125,11 @@ func (e *APIError) Error() string {
 // NewClient creates a new [Client] for making requests to a Vikunja instance.
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		baseURL:    DefaultBaseURL,
-		userAgent:  DefaultUserAgent,
+		httpClient:          &http.Client{Timeout: 30 * time.Second},
+		baseURL:             DefaultBaseURL,
+		userAgent:           DefaultUserAgent,
+		maxResponseBodySize: DefaultMaxResponseBodySize,
+		maxErrorBodySize:    DefaultMaxErrorBodySize,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -158,7 +196,7 @@ func (c *Client) do(req *http.Request, respBody any) (err error) {
 	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		respData, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+		respData, err := io.ReadAll(io.LimitReader(resp.Body, c.maxErrorBodySize))
 		if err != nil {
 			return fmt.Errorf("reading error response: %w", err)
 		}
@@ -169,9 +207,19 @@ func (c *Client) do(req *http.Request, respBody any) (err error) {
 		}
 	}
 
-	respData, err := io.ReadAll(resp.Body)
+	var reader io.Reader
+	if c.maxResponseBodySize == math.MaxInt64 {
+		reader = resp.Body
+	} else {
+		reader = io.LimitReader(resp.Body, c.maxResponseBodySize+1)
+	}
+
+	respData, err := io.ReadAll(reader)
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)
+	}
+	if int64(len(respData)) > c.maxResponseBodySize {
+		return fmt.Errorf("%w: exceeds %d bytes", ErrResponseTooLarge, c.maxResponseBodySize)
 	}
 
 	if respBody != nil && len(respData) > 0 {

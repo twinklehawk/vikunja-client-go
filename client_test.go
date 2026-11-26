@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -344,7 +345,7 @@ func TestDo_APIError(t *testing.T) {
 func TestDo_LimitsErrorBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(strings.Repeat("x", maxErrorBodySize+100)))
+		_, _ = w.Write([]byte(strings.Repeat("x", DefaultMaxErrorBodySize+100)))
 	}))
 	defer server.Close()
 
@@ -355,8 +356,115 @@ func TestDo_LimitsErrorBody(t *testing.T) {
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("error = %v (%T), want *APIError", err, err)
 	}
-	if len(apiErr.Message) != maxErrorBodySize {
-		t.Errorf("len(Message) = %d, want %d", len(apiErr.Message), maxErrorBodySize)
+	if len(apiErr.Message) != DefaultMaxErrorBodySize {
+		t.Errorf("len(Message) = %d, want %d", len(apiErr.Message), DefaultMaxErrorBodySize)
+	}
+}
+
+func TestDo_WithMaxErrorBodySize(t *testing.T) {
+	tests := []struct {
+		name string
+		size int64
+		want int
+	}{
+		{name: "custom", size: 10, want: 10},
+		{name: "zero ignored", size: 0, want: DefaultMaxErrorBodySize},
+		{name: "negative ignored", size: -1, want: DefaultMaxErrorBodySize},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(strings.Repeat("x", DefaultMaxErrorBodySize+100)))
+				}),
+			)
+			defer server.Close()
+
+			client := NewClient(WithBaseURL(server.URL), WithMaxErrorBodySize(tt.size))
+			err := client.do(newTestRequest(t, server.URL), nil)
+
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error = %v (%T), want *APIError", err, err)
+			}
+			if len(apiErr.Message) != tt.want {
+				t.Errorf("len(Message) = %d, want %d", len(apiErr.Message), tt.want)
+			}
+		})
+	}
+}
+
+func TestDo_LimitsResponseBody(t *testing.T) {
+	const limit = 16
+
+	tests := []struct {
+		name     string
+		opts     []Option
+		bodySize int
+		wantErr  bool
+	}{
+		{name: "default allows normal body", bodySize: 1024},
+		{
+			name:     "default rejects oversized body",
+			bodySize: DefaultMaxResponseBodySize + 1,
+			wantErr:  true,
+		},
+		{name: "at limit", opts: []Option{WithMaxResponseBodySize(limit)}, bodySize: limit},
+		{
+			name:     "over limit",
+			opts:     []Option{WithMaxResponseBodySize(limit)},
+			bodySize: limit + 1,
+			wantErr:  true,
+		},
+		{
+			name:     "max int64",
+			opts:     []Option{WithMaxResponseBodySize(math.MaxInt64)},
+			bodySize: 1024,
+		},
+		{
+			name:     "zero ignored",
+			opts:     []Option{WithMaxResponseBodySize(0)},
+			bodySize: 1024,
+		},
+		{
+			name:     "negative ignored",
+			opts:     []Option{WithMaxResponseBodySize(-1)},
+			bodySize: 1024,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A JSON string literal: two quote characters plus padding.
+			body := `"` + strings.Repeat("x", tt.bodySize-2) + `"`
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(body))
+				}),
+			)
+			defer server.Close()
+
+			opts := append([]Option{WithBaseURL(server.URL)}, tt.opts...)
+			client := NewClient(opts...)
+
+			var got string
+			err := client.do(newTestRequest(t, server.URL), &got)
+
+			if tt.wantErr {
+				if !errors.Is(err, ErrResponseTooLarge) {
+					t.Fatalf("error = %v, want %v", err, ErrResponseTooLarge)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != tt.bodySize-2 {
+				t.Errorf("len(got) = %d, want %d", len(got), tt.bodySize-2)
+			}
+		})
 	}
 }
 
