@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 )
 
@@ -96,4 +97,22 @@ func (c *Client) ListProjectViews(
 		return nil, err
 	}
 	return &respBody, nil
+}
+
+// FindProjectViewByTitle finds a single project view in a project by its title.
+// Returns an error if no views match or the first match if there are multiple matches.
+func (c *Client) FindProjectViewByTitle(
+	ctx context.Context,
+	projectID int64,
+	title string,
+) (*ProjectView, error) {
+	views, err := c.ListProjectViews(ctx, projectID, ProjectViewListQuery{Query: title})
+	if err != nil {
+		return nil, err
+	}
+	index := slices.IndexFunc(views.Items, func(v ProjectView) bool { return v.Title == title })
+	if index == -1 {
+		return nil, fmt.Errorf("no project view found matching title '%s'", title)
+	}
+	return &views.Items[index], nil
 }
