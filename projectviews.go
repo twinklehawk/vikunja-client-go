@@ -101,7 +101,11 @@ func (c *Client) ListProjectViews(
 
 // FindProjectViewByTitle finds a single project view in a project by its title.
 // Returns an error if no views match or the first match if there are multiple matches.
-func (c *Client) FindProjectViewByTitle(ctx context.Context, projectID int64, title string) (*ProjectView, error) {
+func (c *Client) FindProjectViewByTitle(
+	ctx context.Context,
+	projectID int64,
+	title string,
+) (*ProjectView, error) {
 	views, err := c.ListProjectViews(ctx, projectID, ProjectViewListQuery{Query: title})
 	if err != nil {
 		return nil, err
