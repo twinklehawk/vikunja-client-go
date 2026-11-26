@@ -3,6 +3,7 @@ package vikunja
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"strconv"
 )
@@ -74,6 +75,50 @@ func (c *Client) ListLabels(
 		return nil, err
 	}
 	return &respBody, nil
+}
+
+// ListLabelsStream returns an iterator over all labels matching the request, fetching pages on demand.
+// request.Page is ignored; iteration always starts at page 1. If a request fails, the error is
+// yielded with a zero [Label] and iteration stops.
+func (c *Client) ListLabelsStream(
+	ctx context.Context,
+	query LabelListQuery,
+) iter.Seq2[Label, error] {
+	return func(yield func(Label, error) bool) {
+		req := query
+		req.Page = 1
+
+		for {
+			resp, err := c.ListLabels(ctx, req)
+			if err != nil {
+				yield(Label{}, err)
+				return
+			}
+			for _, item := range resp.Items {
+				if !yield(item, nil) {
+					return
+				}
+			}
+			if len(resp.Items) == 0 || req.Page >= resp.TotalPages {
+				return
+			}
+			req.Page++
+		}
+	}
+}
+
+// FindLabelByTitle finds a single label by its title.
+// Returns an error if no labels match or the first match if there are multiple matches.
+func (c *Client) FindLabelByTitle(ctx context.Context, title string) (*Label, error) {
+	for p, err := range c.ListLabelsStream(ctx, LabelListQuery{Query: title}) {
+		if err != nil {
+			return nil, err
+		}
+		if p.Title == title {
+			return &p, nil
+		}
+	}
+	return nil, fmt.Errorf("no label found matching title '%s'", title)
 }
 
 // AddTaskLabelRequest specifies the parameters for the AddTaskLabel API.

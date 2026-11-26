@@ -217,6 +217,276 @@ func TestListProjects_CanceledContext(t *testing.T) {
 	}
 }
 
+func TestFindProjectByTitle_SendsRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+	}{
+		{name: "simple title", title: "Work"},
+		{name: "special characters", title: "a&b=c?d e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReq *http.Request
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotReq = r
+					// Echo the searched title back so it is an exact match.
+					body, _ := json.Marshal(map[string]any{
+						"items":       []Project{{ID: 1, Title: r.URL.Query().Get("q")}},
+						"total_pages": 1,
+					})
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(body)
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectByTitle(context.Background(), tt.title)
+			if err != nil {
+				t.Fatalf("FindProjectByTitle returned error: %v", err)
+			}
+			if got.Title != tt.title {
+				t.Errorf("title = %q, want %q", got.Title, tt.title)
+			}
+
+			if gotReq.Method != http.MethodGet {
+				t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+			}
+			if gotReq.URL.Path != "/api/v2/projects" {
+				t.Errorf("path = %q, want %q", gotReq.URL.Path, "/api/v2/projects")
+			}
+			if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+				t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+			}
+			wantQuery := url.Values{"q": {tt.title}, "page": {"1"}}
+			if got := gotReq.URL.Query(); !reflect.DeepEqual(got, wantQuery) {
+				t.Errorf("query = %v, want %v", got, wantQuery)
+			}
+		})
+	}
+}
+
+func TestFindProjectByTitle_ReturnsExactMatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		pages        []string
+		want         *Project
+		wantRequests int
+	}{
+		{
+			name:         "single exact match",
+			pages:        []string{`{"items":[{"id":7,"title":"Work"}],"total_pages":1}`},
+			want:         &Project{ID: 7, Title: "Work"},
+			wantRequests: 1,
+		},
+		{
+			name: "skips partial matches",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Workshop"},{"id":2,"title":"Work"}],"total_pages":1}`,
+			},
+			want:         &Project{ID: 2, Title: "Work"},
+			wantRequests: 1,
+		},
+		{
+			name: "skips different case",
+			pages: []string{
+				`{"items":[{"id":1,"title":"work"},{"id":2,"title":"Work"}],"total_pages":1}`,
+			},
+			want:         &Project{ID: 2, Title: "Work"},
+			wantRequests: 1,
+		},
+		{
+			name: "first of duplicate titles",
+			pages: []string{
+				`{"items":[{"id":3,"title":"Work"},{"id":4,"title":"Work"}],"total_pages":1}`,
+			},
+			want:         &Project{ID: 3, Title: "Work"},
+			wantRequests: 1,
+		},
+		{
+			name: "match on a later page",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Workshop"},{"id":2,"title":"Inbox"}],"total_pages":2}`,
+				`{"items":[{"id":3,"title":"Work"}],"total_pages":2}`,
+			},
+			want:         &Project{ID: 3, Title: "Work"},
+			wantRequests: 2,
+		},
+		{
+			name: "stops fetching after a match",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Work"}],"total_pages":3}`,
+				`{"items":[{"id":2,"title":"Inbox"}],"total_pages":3}`,
+				`{"items":[{"id":3,"title":"Workshop"}],"total_pages":3}`,
+			},
+			want:         &Project{ID: 1, Title: "Work"},
+			wantRequests: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQueries []url.Values
+			server := pagedServer(t, tt.pages, &gotQueries)
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectByTitle(context.Background(), "Work")
+			if err != nil {
+				t.Fatalf("FindProjectByTitle returned error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("project = %+v, want %+v", got, tt.want)
+			}
+			if len(gotQueries) != tt.wantRequests {
+				t.Errorf("requests = %d, want %d", len(gotQueries), tt.wantRequests)
+			}
+		})
+	}
+}
+
+func TestFindProjectByTitle_NoMatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		pages        []string
+		wantRequests int
+	}{
+		{name: "no items", pages: []string{`{"items":[]}`}, wantRequests: 1},
+		{name: "null items", pages: []string{`{"items":null}`}, wantRequests: 1},
+		{name: "missing items", pages: []string{`{}`}, wantRequests: 1},
+		{
+			name: "only partial matches across all pages",
+			pages: []string{
+				`{"items":[{"id":1,"title":"Workshop"}],"total_pages":2}`,
+				`{"items":[{"id":2,"title":"work"}],"total_pages":2}`,
+			},
+			wantRequests: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotQueries []url.Values
+			server := pagedServer(t, tt.pages, &gotQueries)
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectByTitle(context.Background(), "Work")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("project = %+v, want nil", got)
+			}
+			if want := "no project found matching title 'Work'"; err.Error() != want {
+				t.Errorf("error = %q, want %q", err.Error(), want)
+			}
+			if len(gotQueries) != tt.wantRequests {
+				t.Errorf("requests = %d, want %d", len(gotQueries), tt.wantRequests)
+			}
+		})
+	}
+}
+
+func TestFindProjectByTitle_APIError(t *testing.T) {
+	tests := []struct {
+		name      string
+		failPage  string
+		firstPage string
+	}{
+		{name: "first page fails", failPage: "1"},
+		{
+			name:      "later page fails",
+			failPage:  "2",
+			firstPage: `{"items":[{"id":1,"title":"Workshop"}],"total_pages":2}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Query().Get("page") != tt.failPage {
+						_, _ = w.Write([]byte(tt.firstPage))
+						return
+					}
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"message":"invalid token"}`))
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectByTitle(context.Background(), "Work")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("project = %+v, want nil", got)
+			}
+
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error = %v (%T), want *APIError", err, err)
+			}
+			if apiErr.StatusCode != http.StatusUnauthorized {
+				t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+func TestFindProjectByTitle_InvalidResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindProjectByTitle(context.Background(), "Work")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("project = %+v, want nil", got)
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Errorf("error = %v (%T), want wrapped *json.SyntaxError", err, err)
+	}
+}
+
+func TestFindProjectByTitle_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	got, err := client.FindProjectByTitle(context.Background(), "Work")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("project = %+v, want nil", got)
+	}
+}
+
+func TestFindProjectByTitle_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Work"}],"total_pages":1}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindProjectByTitle(ctx, "Work")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", err)
+	}
+	if got != nil {
+		t.Errorf("project = %+v, want nil", got)
+	}
+}
+
 // pagedServer serves pages of projects, recording the query of each request.
 func pagedServer(t *testing.T, pages []string, gotQueries *[]url.Values) *httptest.Server {
 	t.Helper()

@@ -120,6 +120,20 @@ func (c *Client) ListProjectsStream(
 	}
 }
 
+func (c *Client) FindProjectByTitle(ctx context.Context, title string) (*Project, error) {
+	// FindProjectByTitle finds a single project by its title.
+	// Returns an error if no projects match or the first match if there are multiple matches.
+	for p, err := range c.ListProjectsStream(ctx, ProjectListQuery{Query: title}) {
+		if err != nil {
+			return nil, err
+		}
+		if p.Title == title {
+			return &p, nil
+		}
+	}
+	return nil, fmt.Errorf("no project found matching title '%s'", title)
+}
+
 // Bucket contains data for a Vikunja bucket.
 type Bucket struct {
 	ID            int64   `json:"id"`
