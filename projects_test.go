@@ -883,3 +883,271 @@ func TestListProjectViewBuckets_CanceledContext(t *testing.T) {
 		t.Errorf("error = %v, want context.Canceled", err)
 	}
 }
+
+func TestFindProjectViewBucketByTitle_SendsRequest(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+	}{
+		{name: "simple title", title: "Done"},
+		{name: "special characters", title: "a&b=c?d e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotReq *http.Request
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					gotReq = r
+					// Echo the searched title back so it is an exact match.
+					body, _ := json.Marshal(map[string]any{
+						"items": []Bucket{
+							{ID: 1, ProjectViewID: 7, Title: r.URL.Query().Get("q")},
+						},
+					})
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(body)
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, tt.title)
+			if err != nil {
+				t.Fatalf("FindProjectViewBucketByTitle returned error: %v", err)
+			}
+			if got.Title != tt.title {
+				t.Errorf("title = %q, want %q", got.Title, tt.title)
+			}
+
+			if gotReq.Method != http.MethodGet {
+				t.Errorf("method = %q, want %q", gotReq.Method, http.MethodGet)
+			}
+			wantPath := "/api/v2/projects/5/views/7/buckets"
+			if gotReq.URL.Path != wantPath {
+				t.Errorf("path = %q, want %q", gotReq.URL.Path, wantPath)
+			}
+			if got := gotReq.Header.Get("Authorization"); got != "Bearer test-token" {
+				t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
+			}
+			wantQuery := url.Values{"q": {tt.title}}
+			if got := gotReq.URL.Query(); !reflect.DeepEqual(got, wantQuery) {
+				t.Errorf("query = %v, want %v", got, wantQuery)
+			}
+		})
+	}
+}
+
+func TestFindProjectViewBucketByTitle_ReturnsExactMatch(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want *Bucket
+	}{
+		{
+			name: "single exact match",
+			body: `{"items":[{"id":3,"title":"Done","position":200.5,"project_view_id":7}]}`,
+			want: &Bucket{ID: 3, Title: "Done", Position: 200.5, ProjectViewID: 7},
+		},
+		{
+			name: "skips partial matches",
+			body: `{"items":[{"id":1,"title":"Done Archive"},{"id":2,"title":"Done"}]}`,
+			want: &Bucket{ID: 2, Title: "Done"},
+		},
+		{
+			name: "skips different case",
+			body: `{"items":[{"id":1,"title":"done"},{"id":2,"title":"Done"}]}`,
+			want: &Bucket{ID: 2, Title: "Done"},
+		},
+		{
+			name: "first of duplicate titles",
+			body: `{"items":[{"id":3,"title":"Done"},{"id":4,"title":"Done"}]}`,
+			want: &Bucket{ID: 3, Title: "Done"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, "Done")
+			if err != nil {
+				t.Fatalf("FindProjectViewBucketByTitle returned error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("bucket = %+v, want %+v", got, tt.want)
+			}
+			if requests != 1 {
+				t.Errorf("requests = %d, want 1", requests)
+			}
+		})
+	}
+}
+
+func TestFindProjectViewBucketByTitle_NoMatch(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "no items", body: `{"items":[]}`},
+		{name: "null items", body: `{"items":null}`},
+		{name: "missing items", body: `{}`},
+		{name: "empty body", body: ``},
+		{
+			name: "only partial matches",
+			body: `{"items":[{"id":1,"title":"Done Archive"},{"id":2,"title":"done"}]}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					_, _ = w.Write([]byte(tt.body))
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, "Done")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("bucket = %+v, want nil", got)
+			}
+			if want := "no bucket found matching title 'Done'"; err.Error() != want {
+				t.Errorf("error = %q, want %q", err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestFindProjectViewBucketByTitle_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"not found"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, "Done")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("bucket = %+v, want nil", got)
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusNotFound {
+		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusNotFound)
+	}
+}
+
+func TestFindProjectViewBucketByTitle_InvalidResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, "Done")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("bucket = %+v, want nil", got)
+	}
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Errorf("error = %v (%T), want wrapped *json.SyntaxError", err, err)
+	}
+}
+
+func TestFindProjectViewBucketByTitle_RequestError(t *testing.T) {
+	client := newTestClient("http://[::1")
+	got, err := client.FindProjectViewBucketByTitle(context.Background(), 5, 7, "Done")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if got != nil {
+		t.Errorf("bucket = %+v, want nil", got)
+	}
+}
+
+func TestFindProjectViewBucketByTitle_InvalidIDs(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectID     int64
+		projectViewID int64
+		wantInErr     string
+	}{
+		{name: "missing project", projectID: 0, projectViewID: 7, wantInErr: "projectID"},
+		{name: "negative project", projectID: -1, projectViewID: 7, wantInErr: "projectID"},
+		{name: "missing view", projectID: 5, projectViewID: 0, wantInErr: "projectViewID"},
+		{name: "negative view", projectID: 5, projectViewID: -1, wantInErr: "projectViewID"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+				}),
+			)
+			defer server.Close()
+
+			client := newTestClient(server.URL)
+			got, err := client.FindProjectViewBucketByTitle(
+				context.Background(),
+				tt.projectID,
+				tt.projectViewID,
+				"Done",
+			)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if got != nil {
+				t.Errorf("bucket = %+v, want nil", got)
+			}
+			if !strings.Contains(err.Error(), tt.wantInErr) {
+				t.Errorf("error = %q, want it to mention %s", err.Error(), tt.wantInErr)
+			}
+			if requests != 0 {
+				t.Errorf("requests = %d, want 0", requests)
+			}
+		})
+	}
+}
+
+func TestFindProjectViewBucketByTitle_CanceledContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[{"id":1,"title":"Done"}]}`))
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	client := newTestClient(server.URL)
+	got, err := client.FindProjectViewBucketByTitle(ctx, 5, 7, "Done")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error = %v, want context.Canceled", err)
+	}
+	if got != nil {
+		t.Errorf("bucket = %+v, want nil", got)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
+	"slices"
 	"strconv"
 )
 
@@ -210,4 +211,28 @@ func (c *Client) ListProjectViewBuckets(
 		return nil, err
 	}
 	return &respBody, nil
+}
+
+// FindProjectViewBucketByTitle finds a single project view bucket in a project view by its title.
+// Returns an error if no buckets match or the first match if there are multiple matches.
+func (c *Client) FindProjectViewBucketByTitle(
+	ctx context.Context,
+	projectID int64,
+	projectViewID int64,
+	title string,
+) (*Bucket, error) {
+	buckets, err := c.ListProjectViewBuckets(
+		ctx,
+		projectID,
+		projectViewID,
+		ProjectViewBucketListQuery{Query: title},
+	)
+	if err != nil {
+		return nil, err
+	}
+	index := slices.IndexFunc(buckets.Items, func(b Bucket) bool { return b.Title == title })
+	if index == -1 {
+		return nil, fmt.Errorf("no bucket found matching title '%s'", title)
+	}
+	return &buckets.Items[index], nil
 }
