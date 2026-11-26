@@ -120,9 +120,9 @@ func (c *Client) ListProjectsStream(
 	}
 }
 
+// FindProjectByTitle finds a single project by its title.
+// Returns an error if no projects match or the first match if there are multiple matches.
 func (c *Client) FindProjectByTitle(ctx context.Context, title string) (*Project, error) {
-	// FindProjectByTitle finds a single project by its title.
-	// Returns an error if no projects match or the first match if there are multiple matches.
 	for p, err := range c.ListProjectsStream(ctx, ProjectListQuery{Query: title}) {
 		if err != nil {
 			return nil, err
